@@ -19,8 +19,10 @@ use style_traits::ParsingMode;
 use uuid::Uuid;
 use xml5ever::serialize::TraversalScope;
 
+use crate::dom::bindings::codegen::Bindings::CSSStyleDeclarationBinding::CSSStyleDeclarationMethods;
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentMethods;
 use crate::dom::bindings::codegen::Bindings::NodeBinding::NodeMethods;
+use crate::dom::bindings::codegen::Bindings::WindowBinding::WindowMethods;
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::{DomRoot, LayoutDom};
 use crate::dom::bindings::str::DOMString;
@@ -94,6 +96,7 @@ impl SVGSVGElement {
             return;
         }
 
+        self.resolve_custom_properties(cx, &cloned_node);
         self.process_use_elements(cx, &cloned_node);
 
         let Ok(xml_source) = cloned_node.xml_serialize(TraversalScope::IncludeNode) else {
@@ -108,6 +111,47 @@ impl SVGSVGElement {
             Ok(url) => *self.cached_serialized_data_url.borrow_mut() = Some(Ok(url)),
             Err(error) => error!("Unable to parse serialized SVG data url: {error}"),
         };
+    }
+
+    /// The serialized subtree is rendered as a standalone image, where the page's CSS custom properties do not
+    /// exist, so `fill="var(--ink)"` drew black. Substitute every `var(--name[, fallback])` in the paint attributes
+    /// and `style` of the clone with the property's computed value on the matching original element.
+    fn resolve_custom_properties(&self, cx: &mut JSContext, cloned_root: &Node) {
+        let attributes: [LocalName; 4] = [
+            local_name!("fill"),
+            local_name!("stroke"),
+            local_name!("stop-color"),
+            local_name!("style"),
+        ];
+        let window = self.owner_window();
+        let originals: Vec<DomRoot<Element>> = self
+            .upcast::<Node>()
+            .traverse_preorder(ShadowIncluding::No)
+            .filter_map(DomRoot::downcast::<Element>)
+            .collect();
+        let clones: Vec<DomRoot<Element>> = cloned_root
+            .traverse_preorder(ShadowIncluding::No)
+            .filter_map(DomRoot::downcast::<Element>)
+            .collect();
+        for (original, clone) in originals.iter().zip(clones.iter()) {
+            let mut style = None;
+            for name in attributes.iter() {
+                let value = original.get_string_attribute(name);
+                if !value.str().contains("var(") {
+                    continue;
+                }
+                let computed =
+                    style.get_or_insert_with(|| window.GetComputedStyle(cx, original, None));
+                let resolved = substitute_custom_properties(&value.str(), &|property: &str| {
+                    computed
+                        .GetPropertyValue(DOMString::from(property))
+                        .str()
+                        .trim()
+                        .to_owned()
+                });
+                clone.set_string_attribute(cx, name, DOMString::from(resolved));
+            }
+        }
     }
 
     fn process_use_elements(&self, cx: &mut JSContext, root_node: &Node) {
@@ -279,4 +323,48 @@ impl VirtualMethods for SVGSVGElement {
 
         self.invalidate_cached_serialized_subtree_and_rasterization_result(cx.no_gc());
     }
+}
+
+/// Replaces each `var(--name)` or `var(--name, fallback)` in `text` with `lookup("--name")`, or the fallback when
+/// the property is empty. Nested parentheses in a fallback are kept intact.
+fn substitute_custom_properties(text: &str, lookup: &dyn Fn(&str) -> String) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("var(") {
+        out.push_str(&rest[..start]);
+        let inner_start = start + 4;
+        let mut depth = 1;
+        let mut end = None;
+        for (i, ch) in rest[inner_start..].char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(inner_start + i);
+                        break;
+                    }
+                },
+                _ => {},
+            }
+        }
+        let Some(end) = end else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let inner = &rest[inner_start..end];
+        let (name, fallback) = match inner.split_once(',') {
+            Some((name, fallback)) => (name.trim(), Some(fallback.trim())),
+            None => (inner.trim(), None),
+        };
+        let value = lookup(name);
+        if !value.is_empty() {
+            out.push_str(&value);
+        } else if let Some(fallback) = fallback {
+            out.push_str(&substitute_custom_properties(fallback, lookup));
+        }
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
