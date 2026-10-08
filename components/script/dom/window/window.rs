@@ -2791,47 +2791,17 @@ impl Window {
             return;
         }
 
-        let document = self.Document();
-        if document.ReadyState() != DocumentReadyState::Complete {
-            return;
-        }
-
-        if document.render_blocking_element_count() > 0 {
-            return;
-        }
-
-        // Checks if the html element has reftest-wait attribute present.
-        // See http://testthewebforward.org/docs/reftests.html
-        // and https://web-platform-tests.org/writing-tests/crashtest.html
-        if document.GetDocumentElement().is_some_and(|elem| {
-            elem.has_class(&atom!("reftest-wait"), CaseSensitivity::CaseSensitive) ||
-                elem.has_class(&Atom::from("test-wait"), CaseSensitivity::CaseSensitive)
-        }) {
-            return;
-        }
-
-        if self.font_context().web_fonts_still_loading() != 0 {
-            return;
-        }
-
-        if self.Document().Fonts(cx).waiting_to_fullfill_promise() {
-            return;
-        }
-
-        if !self.pending_layout_images.borrow().is_empty() ||
-            !self.pending_images_for_rasterization.borrow().is_empty()
-        {
-            return;
-        }
-
-        let document = self.Document();
-        if document.needs_rendering_update(cx.no_gc()) {
+        if let Some(reason) = self.screenshot_blocker(cx) {
+            info!(
+                "Not ready to take screenshot of {:?}: {reason}",
+                self.pipeline_id()
+            );
             return;
         }
 
         // When all these conditions are met, notify the Constellation that we are ready to
         // have our screenshot taken, when the given layout Epoch has been rendered.
-        let epoch = document.current_rendering_epoch();
+        let epoch = self.Document().current_rendering_epoch();
         let pipeline_id = self.pipeline_id();
         debug!("Ready to take screenshot of {pipeline_id:?} at epoch={epoch:?}");
 
@@ -2841,6 +2811,42 @@ impl Window {
             ),
         );
         self.has_pending_screenshot_readiness_request.set(false);
+    }
+
+    /// What still keeps a screenshot from being taken, if anything.
+    fn screenshot_blocker(&self, cx: &mut JSContext) -> Option<&'static str> {
+        let document = self.Document();
+        if document.ReadyState() != DocumentReadyState::Complete {
+            return Some("document is still loading");
+        }
+        if document.render_blocking_element_count() > 0 {
+            return Some("render-blocking elements");
+        }
+        // Checks if the html element has reftest-wait attribute present.
+        // See http://testthewebforward.org/docs/reftests.html
+        // and https://web-platform-tests.org/writing-tests/crashtest.html
+        if document.GetDocumentElement().is_some_and(|elem| {
+            elem.has_class(&atom!("reftest-wait"), CaseSensitivity::CaseSensitive) ||
+                elem.has_class(&Atom::from("test-wait"), CaseSensitivity::CaseSensitive)
+        }) {
+            return Some("reftest-wait");
+        }
+        if self.font_context().web_fonts_still_loading() != 0 {
+            return Some("web fonts loading");
+        }
+        if self.Document().Fonts(cx).waiting_to_fullfill_promise() {
+            return Some("document.fonts.ready pending");
+        }
+        if !self.pending_layout_images.borrow().is_empty() {
+            return Some("layout images pending");
+        }
+        if !self.pending_images_for_rasterization.borrow().is_empty() {
+            return Some("images pending rasterization");
+        }
+        if document.needs_rendering_update(cx.no_gc()) {
+            return Some("rendering update needed");
+        }
+        None
     }
 
     /// If parsing has taken a long time and reflows are still waiting for the `load` event,
