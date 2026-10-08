@@ -25,6 +25,12 @@ GSTREAMER_DEVEL_URL = f"{URL_BASE}/{GSTREAMER_DEVEL_FILENAME}"
 GSTREAMER_ROOT = "/Library/Frameworks/GStreamer.framework/Versions/1.0"
 
 
+def gstreamer_root_path() -> str:
+    """The official GStreamer framework, or another prefix laid out the same way (bin/pkg-config,
+    lib/gstreamer-1.0), such as Homebrew's `/opt/homebrew`, named by SERVO_GSTREAMER_ROOT."""
+    return os.environ.get("SERVO_GSTREAMER_ROOT", GSTREAMER_ROOT)
+
+
 class MacOS(Base):
     def __init__(self, *args: str, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -32,13 +38,13 @@ class MacOS(Base):
 
     def gstreamer_root(self, target: BuildTarget) -> Optional[str]:
         # We do not support building with gstreamer while cross-compiling on MacOS.
-        if target.is_cross_build() or not os.path.exists(GSTREAMER_ROOT):
+        if target.is_cross_build() or not os.path.exists(gstreamer_root_path()):
             return None
-        return GSTREAMER_ROOT
+        return gstreamer_root_path()
 
     def is_gstreamer_installed(self, target: BuildTarget) -> bool:
-        # Servo only supports the official GStreamer distribution on MacOS.
-        return not target.is_cross_build() and os.path.exists(GSTREAMER_ROOT)
+        # Servo supports the official GStreamer distribution on MacOS, or a prefix named by SERVO_GSTREAMER_ROOT.
+        return not target.is_cross_build() and os.path.exists(gstreamer_root_path())
 
     def _platform_bootstrap(self, force: bool, yes: bool) -> bool:
         installed_something = False

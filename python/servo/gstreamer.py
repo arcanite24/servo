@@ -156,6 +156,13 @@ def rewrite_dependencies_to_be_relative(binary: str, dependency_lines: Set[str],
         except subprocess.CalledProcessError as exception:
             print(f"{arguments} install_name_tool exited with return value {exception.returncode}")
 
+    # install_name_tool invalidates the code signature, and arm64 macOS kills a binary whose signature
+    # does not match (exit 137). Sign it again, ad hoc, as the linker did.
+    try:
+        subprocess.check_call(["codesign", "--force", "--sign", "-", binary], stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as exception:
+        print(f"codesign of {binary} exited with return value {exception.returncode}")
+
 
 def make_rpath_path_absolute(dylib_path_from_otool: str, rpath: str) -> str:
     """Given a dylib dependency from otool, resolve the path into a full path if it
@@ -222,6 +229,11 @@ def package_gstreamer_dylibs(binary_path: str, library_target_directory: str, ta
     print()
     if os.path.exists(library_target_directory) and os.path.exists(marker_file):
         print(" • GStreamer packaging is up-to-date")
+        # The binary is linked anew on every build. A prefix such as Homebrew's links by absolute
+        # path (not @rpath), so point the new binary at the packaged copies again, or it loads both.
+        rewrite_dependencies_to_be_relative(
+            binary_path, set(find_non_system_dependencies_with_otool(binary_path)), relative_path
+        )
         return True
 
     if os.path.exists(library_target_directory):
