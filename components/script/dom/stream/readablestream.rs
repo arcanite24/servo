@@ -17,7 +17,7 @@ use js::rust::{
     HandleObject as SafeHandleObject, HandleValue as SafeHandleValue,
     MutableHandleValue as SafeMutableHandleValue,
 };
-use js::typedarray::{ArrayBufferViewU8, Uint8};
+use js::typedarray::{ArrayBufferViewU8, TypedArray, Uint8};
 use rustc_hash::FxHashMap;
 use servo_base::generic_channel::GenericSharedMemory;
 use servo_base::id::{MessagePortId, MessagePortIndex};
@@ -2454,6 +2454,17 @@ pub(crate) fn bytes_from_chunk_jsval(
     cx: &mut JSContext,
     chunk: &RootedTraceableBox<Heap<JSVal>>,
 ) -> Result<Vec<u8>, Error> {
+    // A Uint8Array is the chunk "read all bytes" expects: copy its bytes at once. Converting it as a
+    // sequence walks it with the iterator protocol, one element at a time, which cost a second of
+    // startup for a page reading its assets through JS streams.
+    let value = chunk.get();
+    if value.is_object() &&
+        let Ok(array) = TypedArray::<Uint8, *mut JSObject>::from(value.to_object())
+    {
+        return array
+            .to_vec()
+            .ok_or_else(|| Error::Type(c"The chunk's buffer is detached.".to_owned()));
+    }
     match Vec::<u8>::from_jsval(cx, chunk.handle(), ConversionBehavior::EnforceRange) {
         Ok(ConversionResult::Success(vec)) => Ok(vec),
         Ok(ConversionResult::Failure(error)) => Err(Error::Type(error.into_owned())),
