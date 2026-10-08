@@ -778,6 +778,13 @@ pub(crate) fn consume_body<T: BodyMixin + DomObject>(
         },
     };
 
+    // A fetch response's body can be collected natively, chunk by chunk as the network delivers
+    // it, instead of through a JS read request per chunk.
+    let native_mime_type = object.get_mime_type(cx);
+    if object.read_body_natively(cx, &promise, body_type, native_mime_type) {
+        return promise;
+    }
+
     // Let errorSteps given error be to reject promise with error.
     let error_promise = promise.clone();
 
@@ -812,7 +819,7 @@ pub(crate) fn consume_body<T: BodyMixin + DomObject>(
 
 /// The success steps of
 /// <https://fetch.spec.whatwg.org/#concept-body-consume-body>.
-fn resolve_result_promise(
+pub(crate) fn resolve_result_promise(
     cx: &mut js::context::JSContext,
     body_type: BodyType,
     promise: &Promise,
@@ -1157,6 +1164,19 @@ pub(crate) trait BodyMixin {
     fn body(&self) -> Option<DomRoot<ReadableStream>>;
     /// <https://fetch.spec.whatwg.org/#concept-body-mime-type>
     fn get_mime_type(&self, cx: &mut js::context::JSContext) -> Vec<u8>;
+    /// Fully read the body without passing each chunk through the stream, when the body is a
+    /// native stream nobody else can observe: the stream is locked (by `consume_body`'s reader)
+    /// and disturbed as reading it would leave it, and `promise` is settled once, at the end of
+    /// the body. Returns false to read the stream as usual.
+    fn read_body_natively(
+        &self,
+        _cx: &mut js::context::JSContext,
+        _promise: &Rc<Promise>,
+        _body_type: BodyType,
+        _mime_type: Vec<u8>,
+    ) -> bool {
+        false
+    }
 }
 
 /// <https://fetch.spec.whatwg.org/#dom-body-textstream>

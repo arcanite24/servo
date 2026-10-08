@@ -1221,6 +1221,18 @@ impl ReadableStream {
         self.error(cx, error_val.handle());
     }
 
+    /// Take the chunks a native source has queued so far, for a reader that collects the body
+    /// natively: only for a readable stream with a default controller whose source is native.
+    pub(crate) fn take_native_chunks(&self) -> Option<Vec<u8>> {
+        if !self.is_readable() {
+            return None;
+        }
+        match self.controller.borrow().as_ref() {
+            Some(ControllerType::Default(controller)) => controller.get()?.take_native_chunks(),
+            _ => None,
+        }
+    }
+
     /// Call into the controller's `Close` method.
     /// <https://streams.spec.whatwg.org/#readablestream-close>
     pub(crate) fn controller_close_native(&self, cx: &mut JSContext) {

@@ -35,7 +35,7 @@ use crate::dom::stream::readablestream::ReadableStream;
 use crate::dom::stream::underlyingsourcecontainer::UnderlyingSourceType;
 use crate::fetch::body::{
     BodyMixin, BodyType, Extractable, ExtractedBody, body_text_stream,
-    clone_body_stream_for_dom_body, consume_body,
+    clone_body_stream_for_dom_body, consume_body, resolve_result_promise,
 };
 use crate::runtime::script_runtime::StreamConsumer;
 
@@ -60,6 +60,8 @@ pub(crate) struct Response {
     fetch_body_stream: MutNullableDom<ReadableStream>,
     #[ignore_malloc_size_of = "StreamConsumer"]
     stream_consumer: DomRefCell<Option<StreamConsumer>>,
+    /// A body being read whole by `consume_body`, collected here as the network delivers it.
+    native_body_reader: DomRefCell<Option<NativeBodyReader>>,
     /// FIXME: This should be removed.
     redirected: Cell<bool>,
 }
@@ -76,6 +78,7 @@ impl Response {
             body_stream: MutNullableDom::new(Some(&*stream)),
             fetch_body_stream: MutNullableDom::new(Some(&*stream)),
             stream_consumer: DomRefCell::new(None),
+            native_body_reader: DomRefCell::new(None),
             redirected: Cell::new(false),
         }
     }
@@ -100,6 +103,10 @@ impl Response {
     }
 
     pub(crate) fn error_stream(&self, cx: &mut js::context::JSContext, error: Error) {
+        let reader = self.native_body_reader.borrow_mut().take();
+        if let Some(reader) = reader {
+            reader.promise.reject_error(cx, error.clone());
+        }
         if let Some(body) = self.fetch_body_stream.get() {
             body.error_native(cx, error);
         }
@@ -138,6 +145,38 @@ impl BodyMixin for Response {
     fn get_mime_type(&self, cx: &mut js::context::JSContext) -> Vec<u8> {
         let headers = self.Headers(cx);
         headers.extract_mime_type()
+    }
+
+    fn read_body_natively(
+        &self,
+        _cx: &mut js::context::JSContext,
+        promise: &Rc<Promise>,
+        body_type: BodyType,
+        mime_type: Vec<u8>,
+    ) -> bool {
+        // Only the network's own stream, untouched by clone() or a stream consumer, and still
+        // receiving: then nothing else can observe its chunks.
+        if self.stream_consumer.borrow().is_some() {
+            return false;
+        }
+        let (Some(body), Some(fetch_body)) = (self.body_stream.get(), self.fetch_body_stream.get())
+        else {
+            return false;
+        };
+        if body != fetch_body {
+            return false;
+        }
+        let Some(bytes) = body.take_native_chunks() else {
+            return false;
+        };
+        body.set_is_disturbed(true);
+        *self.native_body_reader.borrow_mut() = Some(NativeBodyReader {
+            promise: promise.clone(),
+            body_type,
+            mime_type,
+            bytes,
+        });
+        true
     }
 }
 
@@ -539,6 +578,8 @@ impl Response {
         // Note, are these two actually mutually exclusive?
         if let Some(stream_consumer) = self.stream_consumer.borrow().as_ref() {
             stream_consumer.consume_chunk(&chunk);
+        } else if let Some(reader) = self.native_body_reader.borrow_mut().as_mut() {
+            reader.bytes.extend_from_slice(&chunk);
         } else if let Some(body) = self.fetch_body_stream.get() {
             body.enqueue_native(cx, chunk.to_vec());
         }
@@ -548,9 +589,29 @@ impl Response {
         if let Some(body) = self.fetch_body_stream.get() {
             body.controller_close_native(cx);
         }
+        let reader = self.native_body_reader.borrow_mut().take();
+        if let Some(reader) = reader {
+            resolve_result_promise(
+                cx,
+                reader.body_type,
+                &reader.promise,
+                reader.mime_type,
+                reader.bytes,
+            );
+        }
         let stream_consumer = self.stream_consumer.borrow_mut().take();
         if let Some(stream_consumer) = stream_consumer {
             stream_consumer.stream_end();
         }
     }
+}
+
+/// A response body read whole without the stream: see `BodyMixin::read_body_natively`.
+#[derive(JSTraceable, MallocSizeOf)]
+pub(crate) struct NativeBodyReader {
+    #[conditional_malloc_size_of]
+    promise: Rc<Promise>,
+    body_type: BodyType,
+    mime_type: Vec<u8>,
+    bytes: Vec<u8>,
 }

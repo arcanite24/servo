@@ -331,6 +331,11 @@ impl UnderlyingSourceContainer {
     }
 
     /// Does the source have all data in memory?
+    /// Whether the network feeds this source (a fetch response body).
+    pub(crate) fn is_fetch_response(&self) -> bool {
+        matches!(self.underlying_source_type, UnderlyingSource::FetchResponse)
+    }
+
     pub(crate) fn in_memory(&self) -> bool {
         self.underlying_source_type.in_memory()
     }

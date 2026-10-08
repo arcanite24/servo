@@ -730,6 +730,23 @@ impl ReadableStreamDefaultController {
         underlying_source.in_memory()
     }
 
+    /// Take every chunk a fetch response's source has queued, for a reader that collects the rest
+    /// of the body natively. `None` for any other source, once close was requested, or if a chunk
+    /// is not native.
+    pub(crate) fn take_native_chunks(&self) -> Option<Vec<u8>> {
+        // Only a body the network is still delivering: its fetch calls `Response::finish`.
+        let fed_by_network = self
+            .underlying_source
+            .get()
+            .is_some_and(|source| source.is_fetch_response());
+        if !fed_by_network || self.close_requested.get() {
+            return None;
+        }
+        let bytes = self.queue.get_in_memory_bytes()?;
+        self.queue.reset();
+        Some(bytes)
+    }
+
     /// Return bytes synchronously if the stream has all data in memory.
     pub(crate) fn get_in_memory_bytes(&self) -> Option<Vec<u8>> {
         let underlying_source = self.underlying_source.get()?;
