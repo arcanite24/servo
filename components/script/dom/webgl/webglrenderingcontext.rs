@@ -1059,6 +1059,30 @@ impl WebGLRenderingContext {
     }
 
     // https://www.khronos.org/registry/webgl/extensions/ANGLE_instanced_arrays/
+    /// `vertexAttribPointer`, or with `integer` set, WebGL 2's `vertexAttribIPointer`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn vertex_attrib_pointer(
+        &self,
+        cx: &mut JSContext,
+        index: u32,
+        size: i32,
+        type_: u32,
+        normalized: bool,
+        stride: i32,
+        offset: i64,
+        integer: bool,
+    ) {
+        let res = match self.webgl_version() {
+            WebGLVersion::WebGL1 => self
+                .current_vao(cx)
+                .vertex_attrib_pointer(index, size, type_, normalized, stride, offset, integer),
+            WebGLVersion::WebGL2 => self
+                .current_vao_webgl2(cx)
+                .vertex_attrib_pointer(index, size, type_, normalized, stride, offset, integer),
+        };
+        handle_potential_webgl_error!(self, res);
+    }
+
     pub(crate) fn draw_elements_instanced(
         &self,
         cx: &mut JSContext,
@@ -4545,15 +4569,7 @@ impl WebGLRenderingContextMethods<crate::DomTypeHolder> for WebGLRenderingContex
         stride: i32,
         offset: i64,
     ) {
-        let res = match self.webgl_version() {
-            WebGLVersion::WebGL1 => self
-                .current_vao(cx)
-                .vertex_attrib_pointer(index, size, type_, normalized, stride, offset),
-            WebGLVersion::WebGL2 => self
-                .current_vao_webgl2(cx)
-                .vertex_attrib_pointer(index, size, type_, normalized, stride, offset),
-        };
-        handle_potential_webgl_error!(self, res);
+        self.vertex_attrib_pointer(cx, index, size, type_, normalized, stride, offset, false)
     }
 
     /// <https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.4>

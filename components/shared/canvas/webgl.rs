@@ -224,7 +224,8 @@ impl WebGLMsgSender {
         if batch.is_empty() {
             return Ok(());
         }
-        self.sender.send(WebGLMsg::WebGLCommands(self.ctx_id, batch))
+        self.sender
+            .send(WebGLMsg::WebGLCommands(self.ctx_id, batch))
     }
 
     /// Returns the WebGLContextId associated to this sender
@@ -438,6 +439,8 @@ pub enum WebGLCommand {
     VertexAttribI(u32, i32, i32, i32, i32),
     VertexAttribU(u32, u32, u32, u32, u32),
     VertexAttribPointer(u32, i32, u32, bool, i32, u32),
+    /// `vertexAttribIPointer`: an integer attribute, read without conversion to float.
+    VertexAttribIPointer(u32, i32, u32, i32, u32),
     VertexAttribPointer2f(u32, i32, bool, i32, u32),
     SetViewport(i32, i32, i32, i32),
     TexImage3D {
@@ -650,83 +653,83 @@ impl WebGLCommand {
         matches!(
             self,
             WebGLCommand::GetContextAttributes(..) |
-            WebGLCommand::GetBufferSubData(..) |
-            WebGLCommand::CreateBuffer(..) |
-            WebGLCommand::CreateFramebuffer(..) |
-            WebGLCommand::CreateRenderbuffer(..) |
-            WebGLCommand::CreateTexture(..) |
-            WebGLCommand::CreateProgram(..) |
-            WebGLCommand::CreateShader(..) |
-            WebGLCommand::GetExtensions(..) |
-            WebGLCommand::GetShaderPrecisionFormat(..) |
-            WebGLCommand::GetFragDataLocation(..) |
-            WebGLCommand::GetUniformLocation(..) |
-            WebGLCommand::GetShaderInfoLog(..) |
-            WebGLCommand::GetProgramInfoLog(..) |
-            WebGLCommand::GetFramebufferAttachmentParameter(..) |
-            WebGLCommand::GetRenderbufferParameter(..) |
-            WebGLCommand::CreateTransformFeedback(..) |
-            WebGLCommand::IsTransformFeedback(..) |
-            WebGLCommand::GetTransformFeedbackVarying(..) |
-            WebGLCommand::ReadPixels(..) |
-            WebGLCommand::FenceSync(..) |
-            WebGLCommand::IsSync(..) |
-            WebGLCommand::ClientWaitSync(..) |
-            WebGLCommand::GetSyncParameter(..) |
-            WebGLCommand::LinkProgram(..) |
-            WebGLCommand::DrawingBufferWidth(..) |
-            WebGLCommand::DrawingBufferHeight(..) |
-            WebGLCommand::Finish(..) |
-            WebGLCommand::CreateVertexArray(..) |
-            WebGLCommand::GetParameterBool(..) |
-            WebGLCommand::GetParameterBool4(..) |
-            WebGLCommand::GetParameterInt(..) |
-            WebGLCommand::GetParameterInt2(..) |
-            WebGLCommand::GetParameterInt4(..) |
-            WebGLCommand::GetParameterFloat(..) |
-            WebGLCommand::GetParameterFloat2(..) |
-            WebGLCommand::GetParameterFloat4(..) |
-            WebGLCommand::GetProgramValidateStatus(..) |
-            WebGLCommand::GetProgramActiveUniforms(..) |
-            WebGLCommand::GetCurrentVertexAttrib(..) |
-            WebGLCommand::GetTexParameterFloat(..) |
-            WebGLCommand::GetTexParameterInt(..) |
-            WebGLCommand::GetTexParameterBool(..) |
-            WebGLCommand::GetInternalFormatIntVec(..) |
-            WebGLCommand::GetUniformBool(..) |
-            WebGLCommand::GetUniformBool2(..) |
-            WebGLCommand::GetUniformBool3(..) |
-            WebGLCommand::GetUniformBool4(..) |
-            WebGLCommand::GetUniformInt(..) |
-            WebGLCommand::GetUniformInt2(..) |
-            WebGLCommand::GetUniformInt3(..) |
-            WebGLCommand::GetUniformInt4(..) |
-            WebGLCommand::GetUniformUint(..) |
-            WebGLCommand::GetUniformUint2(..) |
-            WebGLCommand::GetUniformUint3(..) |
-            WebGLCommand::GetUniformUint4(..) |
-            WebGLCommand::GetUniformFloat(..) |
-            WebGLCommand::GetUniformFloat2(..) |
-            WebGLCommand::GetUniformFloat3(..) |
-            WebGLCommand::GetUniformFloat4(..) |
-            WebGLCommand::GetUniformFloat9(..) |
-            WebGLCommand::GetUniformFloat16(..) |
-            WebGLCommand::GetUniformFloat2x3(..) |
-            WebGLCommand::GetUniformFloat2x4(..) |
-            WebGLCommand::GetUniformFloat3x2(..) |
-            WebGLCommand::GetUniformFloat3x4(..) |
-            WebGLCommand::GetUniformFloat4x2(..) |
-            WebGLCommand::GetUniformFloat4x3(..) |
-            WebGLCommand::GetUniformBlockIndex(..) |
-            WebGLCommand::GetUniformIndices(..) |
-            WebGLCommand::GetActiveUniforms(..) |
-            WebGLCommand::GetActiveUniformBlockName(..) |
-            WebGLCommand::GetActiveUniformBlockParameter(..) |
-            WebGLCommand::GenerateQuery(..) |
-            WebGLCommand::GetQueryState(..) |
-            WebGLCommand::GenerateSampler(..) |
-            WebGLCommand::GetSamplerParameterFloat(..) |
-            WebGLCommand::GetSamplerParameterInt(..)
+                WebGLCommand::GetBufferSubData(..) |
+                WebGLCommand::CreateBuffer(..) |
+                WebGLCommand::CreateFramebuffer(..) |
+                WebGLCommand::CreateRenderbuffer(..) |
+                WebGLCommand::CreateTexture(..) |
+                WebGLCommand::CreateProgram(..) |
+                WebGLCommand::CreateShader(..) |
+                WebGLCommand::GetExtensions(..) |
+                WebGLCommand::GetShaderPrecisionFormat(..) |
+                WebGLCommand::GetFragDataLocation(..) |
+                WebGLCommand::GetUniformLocation(..) |
+                WebGLCommand::GetShaderInfoLog(..) |
+                WebGLCommand::GetProgramInfoLog(..) |
+                WebGLCommand::GetFramebufferAttachmentParameter(..) |
+                WebGLCommand::GetRenderbufferParameter(..) |
+                WebGLCommand::CreateTransformFeedback(..) |
+                WebGLCommand::IsTransformFeedback(..) |
+                WebGLCommand::GetTransformFeedbackVarying(..) |
+                WebGLCommand::ReadPixels(..) |
+                WebGLCommand::FenceSync(..) |
+                WebGLCommand::IsSync(..) |
+                WebGLCommand::ClientWaitSync(..) |
+                WebGLCommand::GetSyncParameter(..) |
+                WebGLCommand::LinkProgram(..) |
+                WebGLCommand::DrawingBufferWidth(..) |
+                WebGLCommand::DrawingBufferHeight(..) |
+                WebGLCommand::Finish(..) |
+                WebGLCommand::CreateVertexArray(..) |
+                WebGLCommand::GetParameterBool(..) |
+                WebGLCommand::GetParameterBool4(..) |
+                WebGLCommand::GetParameterInt(..) |
+                WebGLCommand::GetParameterInt2(..) |
+                WebGLCommand::GetParameterInt4(..) |
+                WebGLCommand::GetParameterFloat(..) |
+                WebGLCommand::GetParameterFloat2(..) |
+                WebGLCommand::GetParameterFloat4(..) |
+                WebGLCommand::GetProgramValidateStatus(..) |
+                WebGLCommand::GetProgramActiveUniforms(..) |
+                WebGLCommand::GetCurrentVertexAttrib(..) |
+                WebGLCommand::GetTexParameterFloat(..) |
+                WebGLCommand::GetTexParameterInt(..) |
+                WebGLCommand::GetTexParameterBool(..) |
+                WebGLCommand::GetInternalFormatIntVec(..) |
+                WebGLCommand::GetUniformBool(..) |
+                WebGLCommand::GetUniformBool2(..) |
+                WebGLCommand::GetUniformBool3(..) |
+                WebGLCommand::GetUniformBool4(..) |
+                WebGLCommand::GetUniformInt(..) |
+                WebGLCommand::GetUniformInt2(..) |
+                WebGLCommand::GetUniformInt3(..) |
+                WebGLCommand::GetUniformInt4(..) |
+                WebGLCommand::GetUniformUint(..) |
+                WebGLCommand::GetUniformUint2(..) |
+                WebGLCommand::GetUniformUint3(..) |
+                WebGLCommand::GetUniformUint4(..) |
+                WebGLCommand::GetUniformFloat(..) |
+                WebGLCommand::GetUniformFloat2(..) |
+                WebGLCommand::GetUniformFloat3(..) |
+                WebGLCommand::GetUniformFloat4(..) |
+                WebGLCommand::GetUniformFloat9(..) |
+                WebGLCommand::GetUniformFloat16(..) |
+                WebGLCommand::GetUniformFloat2x3(..) |
+                WebGLCommand::GetUniformFloat2x4(..) |
+                WebGLCommand::GetUniformFloat3x2(..) |
+                WebGLCommand::GetUniformFloat3x4(..) |
+                WebGLCommand::GetUniformFloat4x2(..) |
+                WebGLCommand::GetUniformFloat4x3(..) |
+                WebGLCommand::GetUniformBlockIndex(..) |
+                WebGLCommand::GetUniformIndices(..) |
+                WebGLCommand::GetActiveUniforms(..) |
+                WebGLCommand::GetActiveUniformBlockName(..) |
+                WebGLCommand::GetActiveUniformBlockParameter(..) |
+                WebGLCommand::GenerateQuery(..) |
+                WebGLCommand::GetQueryState(..) |
+                WebGLCommand::GenerateSampler(..) |
+                WebGLCommand::GetSamplerParameterFloat(..) |
+                WebGLCommand::GetSamplerParameterInt(..)
         )
     }
 }

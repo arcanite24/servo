@@ -319,8 +319,17 @@ impl WebGL2RenderingContext {
                     VertexAttrib::Uint(_, _, _, _) => constants::UNSIGNED_INT,
                     VertexAttrib::Float(_, _, _, _) => constants::FLOAT,
                 }
+            } else if !attrib.integer {
+                // `vertexAttribPointer` data reaches the shader as float, whatever its
+                // component type (normalized UNSIGNED_BYTE colours, HALF_FLOAT, ...).
+                constants::FLOAT
             } else {
-                attrib.type_
+                match attrib.type_ {
+                    constants::UNSIGNED_BYTE |
+                    constants::UNSIGNED_SHORT |
+                    constants::UNSIGNED_INT => constants::UNSIGNED_INT,
+                    _ => constants::INT,
+                }
             };
 
             let contains = groups
@@ -3142,7 +3151,7 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
             _ => return self.base.webgl_error(InvalidEnum),
         };
         self.base
-            .VertexAttribPointer(cx, index, size, type_, false, stride, offset)
+            .vertex_attrib_pointer(cx, index, size, type_, false, stride, offset, true)
     }
 
     /// <https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.4>

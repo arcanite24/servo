@@ -96,6 +96,8 @@ impl VertexArrayObject {
         self.vertex_attribs.borrow_mut()[index as usize].type_ = type_;
     }
 
+    /// `vertexAttribPointer`, or with `integer` set, WebGL 2's `vertexAttribIPointer`.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn vertex_attrib_pointer(
         &self,
         index: u32,
@@ -104,6 +106,7 @@ impl VertexArrayObject {
         normalized: bool,
         stride: i32,
         offset: i64,
+        integer: bool,
     ) -> WebGLResult<()> {
         let mut attribs = self.vertex_attribs.borrow_mut();
         let data = attribs
@@ -153,14 +156,11 @@ impl VertexArrayObject {
             },
             _ => {},
         }
-        context.send_command(WebGLCommand::VertexAttribPointer(
-            index,
-            size,
-            type_,
-            normalized,
-            stride,
-            offset as u32,
-        ));
+        context.send_command(if integer {
+            WebGLCommand::VertexAttribIPointer(index, size, type_, stride, offset as u32)
+        } else {
+            WebGLCommand::VertexAttribPointer(index, size, type_, normalized, stride, offset as u32)
+        });
         if let Some(old) = data.buffer() {
             old.decrement_attached_counter(Operation::Infallible);
         }
@@ -175,6 +175,7 @@ impl VertexArrayObject {
             offset: offset as u32,
             buffer: buffer.map(|b| Dom::from_ref(&*b)),
             divisor: data.divisor,
+            integer,
         };
 
         Ok(())
@@ -279,6 +280,8 @@ pub(crate) struct VertexAttribData {
     pub(crate) offset: u32,
     pub(crate) buffer: Option<Dom<WebGLBuffer>>,
     pub(crate) divisor: u32,
+    /// Set with `vertexAttribIPointer`: the shader reads it as `int`/`uint`, not `float`.
+    pub(crate) integer: bool,
 }
 
 impl Default for VertexAttribData {
@@ -293,6 +296,7 @@ impl Default for VertexAttribData {
             offset: 0,
             buffer: None,
             divisor: 0,
+            integer: false,
         }
     }
 }
