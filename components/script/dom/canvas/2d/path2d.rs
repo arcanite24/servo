@@ -134,6 +134,20 @@ impl Path2DMethods<crate::DomTypeHolder> for Path2D {
             .bezier_curve_to(cp1x, cp1y, cp2x, cp2y, x, y);
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-context-2d-roundrect>
+    fn RoundRect(
+        &self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        radii: Option<crate::dom::bindings::codegen::UnionTypes::UnrestrictedDoubleOrUnrestrictedDoubleSequence>,
+    ) -> Fallible<()> {
+        let radii = super::canvas_state::round_rect_radii(radii.as_ref())?;
+        self.path.borrow_mut().round_rect(x, y, w, h, radii);
+        Ok(())
+    }
+
     /// <https://html.spec.whatwg.org/multipage/#dom-context-2d-arcto>
     fn ArcTo(&self, x1: f64, y1: f64, x2: f64, y2: f64, radius: f64) -> Fallible<()> {
         self.path

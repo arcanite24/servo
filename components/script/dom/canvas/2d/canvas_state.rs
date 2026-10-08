@@ -56,7 +56,9 @@ use crate::dom::bindings::codegen::Bindings::CanvasRenderingContext2DBinding::{
     CanvasTextAlign, CanvasTextBaseline, ImageDataMethods,
 };
 use crate::dom::bindings::codegen::Bindings::DOMMatrixBinding::DOMMatrix2DInit;
-use crate::dom::bindings::codegen::UnionTypes::StringOrCanvasGradientOrCanvasPattern;
+use crate::dom::bindings::codegen::UnionTypes::{
+    StringOrCanvasGradientOrCanvasPattern, UnrestrictedDoubleOrUnrestrictedDoubleSequence,
+};
 use crate::dom::bindings::error::{Error, ErrorResult, Fallible};
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::num::Finite;
@@ -2317,6 +2319,22 @@ impl CanvasState {
             .map_err(|_| Error::IndexSize(None))
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-context-2d-roundrect>
+    pub(super) fn round_rect(
+        &self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        radii: Option<&UnrestrictedDoubleOrUnrestrictedDoubleSequence>,
+    ) -> ErrorResult {
+        let radii = round_rect_radii(radii)?;
+        self.current_default_path
+            .borrow_mut()
+            .round_rect(x, y, w, h, radii);
+        Ok(())
+    }
+
     // https://html.spec.whatwg.org/multipage/#dom-context-2d-arcto
     pub(super) fn arc_to(&self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, r: f64) -> ErrorResult {
         self.current_default_path
@@ -2794,4 +2812,33 @@ fn replace_ascii_whitespace(text: &str) -> String {
             _ => c,
         })
         .collect()
+}
+
+/// Steps 2-7 of <https://html.spec.whatwg.org/multipage/#dom-context-2d-roundrect>: expand `radii` to one radius
+/// per corner (upper-left, upper-right, lower-right, lower-left).
+pub(crate) fn round_rect_radii(
+    radii: Option<&UnrestrictedDoubleOrUnrestrictedDoubleSequence>,
+) -> Result<[f64; 4], Error> {
+    // The IDL default is 0; Servo's binding generator cannot express a numeric default on a union.
+    let list: Vec<f64> = match radii {
+        None => vec![0.0],
+        Some(UnrestrictedDoubleOrUnrestrictedDoubleSequence::UnrestrictedDouble(r)) => vec![*r],
+        Some(UnrestrictedDoubleOrUnrestrictedDoubleSequence::UnrestrictedDoubleSequence(list)) => {
+            list.clone()
+        },
+    };
+    // Step 2. If radii is not a list of size one, two, three, or four, then throw a RangeError.
+    let corners = match list.as_slice() {
+        [a] => [*a, *a, *a, *a],
+        [a, b] => [*a, *b, *a, *b],
+        [a, b, c] => [*a, *b, *c, *b],
+        [a, b, c, d] => [*a, *b, *c, *d],
+        _ => return Err(Error::Range(c"roundRect radii must have 1 to 4 entries".to_owned())),
+    };
+    // Step 6. A negative radius throws a RangeError (non-finite radii make the call a no-op, handled by callers
+    // through the zero-size path below).
+    if corners.iter().any(|r| r.is_finite() && *r < 0.0) {
+        return Err(Error::Range(c"roundRect radii must not be negative".to_owned()));
+    }
+    Ok(corners.map(|r| if r.is_finite() { r } else { 0.0 }))
 }

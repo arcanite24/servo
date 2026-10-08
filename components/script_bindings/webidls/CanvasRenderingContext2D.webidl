@@ -234,6 +234,10 @@ interface mixin CanvasPath {
              unrestricted double radius);
 
   undefined rect(unrestricted double x, unrestricted double y, unrestricted double w, unrestricted double h);
+  // TODO: DOMPointInit radii (elliptical corners) are not supported yet; numbers are.
+  [Throws]
+  undefined roundRect(unrestricted double x, unrestricted double y, unrestricted double w, unrestricted double h,
+                      optional (unrestricted double or sequence<unrestricted double>) radii);
 
   [Throws]
   undefined arc(unrestricted double x, unrestricted double y, unrestricted double radius,

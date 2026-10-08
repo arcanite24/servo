@@ -357,6 +357,57 @@ impl Path {
         self.0.move_to((x, y));
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-context-2d-roundrect>, with one circular radius per corner in
+    /// the order upper-left, upper-right, lower-right, lower-left. Radii are already validated (finite, >= 0).
+    pub fn round_rect(&mut self, x: f64, y: f64, w: f64, h: f64, radii: [f64; 4]) {
+        // Step 1. If any of x, y, w, or h are infinite or NaN, then return.
+        if !(x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()) {
+            return;
+        }
+        let [mut upper_left, mut upper_right, mut lower_right, mut lower_left] = radii;
+        // Steps 9-10. A negative width or height mirrors the rectangle, so the corners swap.
+        if w < 0.0 {
+            std::mem::swap(&mut upper_left, &mut upper_right);
+            std::mem::swap(&mut lower_left, &mut lower_right);
+        }
+        if h < 0.0 {
+            std::mem::swap(&mut upper_left, &mut lower_left);
+            std::mem::swap(&mut upper_right, &mut lower_right);
+        }
+        // Step 11. Corner curves must not overlap: scale every radius down by the same factor.
+        let (width, height) = (w.abs(), h.abs());
+        let mut scale: f64 = 1.0;
+        for (sum, side) in [
+            (upper_left + upper_right, width),
+            (lower_left + lower_right, width),
+            (upper_left + lower_left, height),
+            (upper_right + lower_right, height),
+        ] {
+            if sum > side && sum > 0.0 {
+                scale = scale.min(side / sum);
+            }
+        }
+        let [ul, ur, lr, ll] = [upper_left, upper_right, lower_right, lower_left].map(|r| r * scale);
+        let (sx, sy) = (if w < 0.0 { -1.0 } else { 1.0 }, if h < 0.0 { -1.0 } else { 1.0 });
+        let (x1, y1) = (x + w, y + h);
+
+        // Step 12. Create a new subpath tracing the rounded rectangle, clockwise from the top edge.
+        self.0.move_to((x + sx * ul, y));
+        self.0.line_to((x1 - sx * ur, y));
+        let _ = self.arc_to(x1, y, x1, y + sy * ur, ur);
+        self.0.line_to((x1, y1 - sy * lr));
+        let _ = self.arc_to(x1, y1, x1 - sx * lr, y1, lr);
+        self.0.line_to((x + sx * ll, y1));
+        let _ = self.arc_to(x, y1, x, y1 - sy * ll, ll);
+        self.0.line_to((x, y + sy * ul));
+        let _ = self.arc_to(x, y, x + sx * ul, y, ul);
+
+        // Step 13. Mark the subpath as closed.
+        self.0.close_path();
+        // Step 14. Create a new subpath with the point (x, y) as the only point in the subpath.
+        self.0.move_to((x, y));
+    }
+
     /// <https://html.spec.whatwg.org/multipage/#dom-context-2d-ispointinpath>
     pub fn is_point_in_path(&self, x: f64, y: f64, fill_rule: FillRule) -> bool {
         let p = Point::new(x, y);

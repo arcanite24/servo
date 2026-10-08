@@ -484,6 +484,18 @@ impl CanvasRenderingContext2DMethods<crate::DomTypeHolder> for CanvasRenderingCo
         self.canvas_state.arc(x, y, r, start, end, ccw)
     }
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-context-2d-roundrect>
+    fn RoundRect(
+        &self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        radii: Option<crate::dom::bindings::codegen::UnionTypes::UnrestrictedDoubleOrUnrestrictedDoubleSequence>,
+    ) -> ErrorResult {
+        self.canvas_state.round_rect(x, y, w, h, radii.as_ref())
+    }
+
     /// <https://html.spec.whatwg.org/multipage/#dom-context-2d-arcto>
     fn ArcTo(&self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, r: f64) -> ErrorResult {
         self.canvas_state.arc_to(cp1x, cp1y, cp2x, cp2y, r)
