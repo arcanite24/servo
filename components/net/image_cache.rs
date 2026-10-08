@@ -728,6 +728,18 @@ impl ImageCacheStore {
             .rasterized_vector_images
             .remove(&(*image_id, *device_size))
         {
+            // Whoever waits on this rasterization must hear that it is over (a layout waiting
+            // for it, a WebDriver screenshot waiting for that layout): their next layout asks
+            // for the image as it is now.
+            for (pipeline_id, callback) in entry.listeners {
+                callback(ImageCacheResponseMessage::VectorImageRasterizationComplete(
+                    RasterizationCompleteResponse {
+                        pipeline_id,
+                        image_id: *image_id,
+                        requested_size: *device_size,
+                    },
+                ));
+            }
             if let Some(result) = entry.result {
                 if let Some(image_id) = result.id {
                     self.paint_api.update_images(
@@ -982,20 +994,18 @@ impl ImageCache for ImageCacheImpl {
         {
             let mut store = self.store.lock();
             let key = (image_id, requested_size);
+            // A rasterization that is unknown or gone will never complete, so answer at once
+            // rather than leave the listener waiting forever.
             if !store.vector_images.contains_key(&image_id) {
-                warn!("Unknown image requested for rasterization for key {key:?}");
-                return;
-            };
-
-            let Some(task) = store.rasterized_vector_images.get_mut(&key) else {
-                warn!("Image rasterization task not found in the cache for key {key:?}");
-                return;
-            };
-
-            // If `result` is `None`, the task is still pending.
-            if task.result.is_none() {
-                task.listeners.push((pipeline_id, callback));
-                return;
+                debug!("Unknown image requested for rasterization for key {key:?}");
+            } else if let Some(task) = store.rasterized_vector_images.get_mut(&key) {
+                // If `result` is `None`, the task is still pending.
+                if task.result.is_none() {
+                    task.listeners.push((pipeline_id, callback));
+                    return;
+                }
+            } else {
+                debug!("Image rasterization task not found in the cache for key {key:?}");
             }
         }
 
@@ -1037,19 +1047,18 @@ impl ImageCache for ImageCacheImpl {
             old_mapped_image_id != image_id
         {
             store.vector_images.remove(&old_mapped_image_id);
-            store
+            let old_tasks = store
                 .rasterized_vector_images
-                .remove(&(old_mapped_image_id, requested_size));
+                .keys()
+                .filter(|(id, _size)| *id == old_mapped_image_id)
+                .cloned()
+                .collect::<Vec<_>>();
+            for (id, size) in old_tasks {
+                store.remove_rasterized_vector_image(&id, &size);
+            }
             store
                 .svg_rasterization_task_store
                 .remove_all_for_id(old_mapped_image_id);
-        }
-
-        if store
-            .svg_rasterization_task_store
-            .is_or_set_being_rasterized(image_id, requested_size)
-        {
-            return None;
         }
 
         let natural_size = vector_image.svg_tree.size().to_int_size();
@@ -1076,6 +1085,15 @@ impl ImageCache for ImageCacheImpl {
                 "Asked for requested size {:?} which has zero size. Not returning image",
                 requested_size
             );
+            // Nothing will be rasterized, so nobody may wait on it.
+            store.remove_rasterized_vector_image(&image_id, &requested_size);
+            return None;
+        }
+
+        if store
+            .svg_rasterization_task_store
+            .is_or_set_being_rasterized(image_id, requested_size)
+        {
             return None;
         }
 
@@ -1147,9 +1165,7 @@ impl ImageCache for ImageCacheImpl {
                     store
                         .svg_rasterization_task_store
                         .remove_being_rasterized(image_id, requested_size);
-                    store
-                        .rasterized_vector_images
-                        .remove(&(image_id, requested_size));
+                    store.remove_rasterized_vector_image(&image_id, &requested_size);
 
                     // Remove the `image_id` from `vector_images` so the check at the top of this
                     // method will fail for subsequent calls and won't trigger rasterization
