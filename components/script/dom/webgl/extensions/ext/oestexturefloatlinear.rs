@@ -35,7 +35,10 @@ impl WebGLExtension for OESTextureFloatLinear {
     }
 
     fn is_supported(ext: &WebGLExtensions) -> bool {
-        ext.supports_any_gl_extension(&["GL_OES_texture_float_linear", "GL_ARB_texture_float"])
+        // Float textures (and linear filtering of them) are core in desktop OpenGL 3.0+, where drivers stop listing
+        // GL_ARB_texture_float, so a desktop context supports this without the extension string.
+        !ext.is_gles() ||
+            ext.supports_any_gl_extension(&["GL_OES_texture_float_linear", "GL_ARB_texture_float"])
     }
 
     fn enable(ext: &WebGLExtensions) {

@@ -233,7 +233,8 @@ impl WebGLValidator for TexImage3DValidator<'_> {
 
         // GL_INVALID_ENUM is generated if format is not an accepted format constant.
         // Format constants other than GL_STENCIL_INDEX and GL_DEPTH_COMPONENT are accepted.
-        let data_type = match TexDataType::from_gl_constant(self.data_type) {
+        // 3D uploads exist only in WebGL 2, where HALF_FLOAT is 0x140B.
+        let data_type = match TexDataType::from_gl_constant_webgl2(self.data_type) {
             Some(data_type) if data_type.required_webgl_version() <= context.webgl_version() => {
                 data_type
             },

@@ -28,6 +28,7 @@ use crate::dom::bindings::trace::JSTraceable;
 use crate::dom::webgl::extensions::extcolorbufferhalffloat::EXTColorBufferHalfFloat;
 use crate::dom::webgl::extensions::oestexturefloat::OESTextureFloat;
 use crate::dom::webgl::extensions::oestexturehalffloat::OESTextureHalfFloat;
+use crate::dom::webgl::extensions::extcolorbufferfloat::EXTColorBufferFloat;
 use crate::dom::webgl::extensions::webglcolorbufferfloat::WEBGLColorBufferFloat;
 use crate::dom::webgl::webglrenderingcontext::WebGLRenderingContext;
 use crate::dom::webgl::webgltexture::TexCompression;
@@ -417,6 +418,7 @@ impl WebGLExtensions {
     fn register_all_extensions(&self) {
         self.register::<ext::angleinstancedarrays::ANGLEInstancedArrays>();
         self.register::<ext::extblendminmax::EXTBlendMinmax>();
+        self.register::<ext::extcolorbufferfloat::EXTColorBufferFloat>();
         self.register::<ext::extcolorbufferhalffloat::EXTColorBufferHalfFloat>();
         self.register::<ext::extfragdepth::EXTFragDepth>();
         self.register::<ext::extshadertexturelod::EXTShaderTextureLod>();
@@ -450,7 +452,9 @@ impl WebGLExtensions {
     }
 
     pub(crate) fn is_float_buffer_renderable(&self) -> bool {
-        self.is_enabled::<WEBGLColorBufferFloat>() || self.is_enabled::<OESTextureFloat>()
+        self.is_enabled::<WEBGLColorBufferFloat>() ||
+            self.is_enabled::<OESTextureFloat>() ||
+            self.is_enabled::<EXTColorBufferFloat>()
     }
 
     pub(crate) fn is_min_glsl_version_satisfied(&self, min_glsl_version: WebGLSLVersion) -> bool {
@@ -458,7 +462,9 @@ impl WebGLExtensions {
     }
 
     pub(crate) fn is_half_float_buffer_renderable(&self) -> bool {
-        self.is_enabled::<EXTColorBufferHalfFloat>() || self.is_enabled::<OESTextureHalfFloat>()
+        self.is_enabled::<EXTColorBufferHalfFloat>() ||
+            self.is_enabled::<OESTextureHalfFloat>() ||
+            self.is_enabled::<EXTColorBufferFloat>()
     }
 
     pub(crate) fn effective_type(&self, type_: u32) -> u32 {

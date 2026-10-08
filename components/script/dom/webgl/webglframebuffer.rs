@@ -288,18 +288,19 @@ impl WebGLFramebuffer {
         if self.check_status() != constants::FRAMEBUFFER_COMPLETE {
             return Err(WebGLError::InvalidFramebufferOperation);
         }
-        let color = match self.attachment(constants::COLOR_ATTACHMENT0) {
+        // Report texture attachments too: comparing a renderbuffer's format with `None` made every blit from a
+        // multisampled renderbuffer into a texture (how three.js resolves MSAA) fail with INVALID_OPERATION.
+        let format = |attachment| match self.attachment(attachment) {
             Some(WebGLFramebufferAttachmentRoot::Renderbuffer(rb)) => Some(rb.internal_format()),
-            _ => None,
+            Some(WebGLFramebufferAttachmentRoot::Texture(texture)) => texture
+                .image_info_at_face(0, 0)
+                .map(|info| info.internal_format().as_gl_constant()),
+            None => None,
         };
-        let depth = match self.attachment(constants::DEPTH_ATTACHMENT) {
-            Some(WebGLFramebufferAttachmentRoot::Renderbuffer(rb)) => Some(rb.internal_format()),
-            _ => None,
-        };
-        let stencil = match self.attachment(constants::STENCIL_ATTACHMENT) {
-            Some(WebGLFramebufferAttachmentRoot::Renderbuffer(rb)) => Some(rb.internal_format()),
-            _ => None,
-        };
+        let color = format(constants::COLOR_ATTACHMENT0);
+        let depth_stencil = format(constants::DEPTH_STENCIL_ATTACHMENT);
+        let depth = format(constants::DEPTH_ATTACHMENT).or(depth_stencil);
+        let stencil = format(constants::STENCIL_ATTACHMENT).or(depth_stencil);
         Ok((color, depth, stencil))
     }
 

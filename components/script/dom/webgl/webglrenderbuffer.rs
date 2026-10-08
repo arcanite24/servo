@@ -258,6 +258,19 @@ impl WebGLRenderbuffer {
                 }
                 internal_format
             },
+            // The remaining WebGL 2 float formats are color-renderable with EXT_color_buffer_float.
+            constants::R16F |
+            constants::RG16F |
+            constants::R32F |
+            constants::RG32F |
+            constants::R11F_G11F_B10F => {
+                if webgl_version == WebGLVersion::WebGL1 ||
+                    !context.extension_manager().is_float_buffer_renderable()
+                {
+                    return Err(WebGLError::InvalidEnum);
+                }
+                internal_format
+            },
             _ => return Err(WebGLError::InvalidEnum),
         };
 

@@ -1693,6 +1693,36 @@ impl WebGLImpl {
                     );
                 }
             },
+            WebGLCommand::TexSubImage3D {
+                target,
+                level,
+                xoffset,
+                yoffset,
+                zoffset,
+                width,
+                height,
+                depth,
+                format,
+                effective_data_type,
+                unpacking_alignment,
+                ref data,
+            } => unsafe {
+                let bytes: &[u8] = data;
+                gl.pixel_store_i32(gl::UNPACK_ALIGNMENT, unpacking_alignment as i32);
+                gl.tex_sub_image_3d(
+                    target,
+                    level as i32,
+                    xoffset,
+                    yoffset,
+                    zoffset,
+                    width as i32,
+                    height as i32,
+                    depth as i32,
+                    format,
+                    effective_data_type,
+                    PixelUnpackData::Slice(Some(bytes)),
+                );
+            },
             WebGLCommand::TexImage2D {
                 target,
                 level,
@@ -2496,7 +2526,20 @@ impl WebGLImpl {
                 }
             },
             WebGLCommand::ReadBuffer(buffer) => unsafe { gl.read_buffer(buffer) },
-            WebGLCommand::DrawBuffers(ref buffers) => unsafe { gl.draw_buffers(buffers) },
+            WebGLCommand::DrawBuffers(ref buffers) => {
+                // WebGL's default framebuffer is a surfman framebuffer object here, and GL rejects BACK on an FBO
+                // (INVALID_OPERATION), which left the draw buffer broken and made the next swap panic with
+                // SurfaceCreationFailed. On the default framebuffer, BACK means its single color attachment.
+                let buffers: Vec<u32> = if state.drawing_to_default_framebuffer {
+                    buffers
+                        .iter()
+                        .map(|&b| if b == gl::BACK { gl::COLOR_ATTACHMENT0 } else { b })
+                        .collect()
+                } else {
+                    buffers.clone()
+                };
+                unsafe { gl.draw_buffers(&buffers) }
+            },
         }
 
         // If debug asertions are enabled, then check the error state.

@@ -422,6 +422,21 @@ pub enum WebGLCommand {
         pixel_format: Option<PixelFormat>,
         data: TruncatedDebug<GenericSharedMemory>,
     },
+    /// A sub-region upload into a 3D or 2D-array texture, from raw pixels (WebGL forbids flip/premultiply here).
+    TexSubImage3D {
+        target: u32,
+        level: u32,
+        xoffset: i32,
+        yoffset: i32,
+        zoffset: i32,
+        width: u32,
+        height: u32,
+        depth: u32,
+        format: u32,
+        effective_data_type: u32,
+        unpacking_alignment: u32,
+        data: TruncatedDebug<GenericSharedMemory>,
+    },
     TexImage2D {
         target: u32,
         level: u32,
@@ -1132,6 +1147,18 @@ gl_enums! {
         Float = gl::FLOAT,
         HalfFloat = gl::HALF_FLOAT_OES,
         Float32UnsignedInt248Rev = gl::FLOAT_32_UNSIGNED_INT_24_8_REV,
+    }
+}
+
+impl TexDataType {
+    /// Like `from_gl_constant`, but also accepts WebGL 2's `HALF_FLOAT` (0x140B). `TexDataType::HalfFloat` is
+    /// WebGL 1's `HALF_FLOAT_OES` (0x8D61), so without this every WebGL 2 half-float upload (and with it three.js's
+    /// half-float render targets) failed with INVALID_ENUM. `effective_type` turns it back into the driver's value.
+    pub fn from_gl_constant_webgl2(constant: u32) -> Option<Self> {
+        if constant == 0x140B {
+            return Some(TexDataType::HalfFloat);
+        }
+        Self::from_gl_constant(constant)
     }
 }
 

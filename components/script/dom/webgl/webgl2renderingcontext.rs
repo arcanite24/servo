@@ -267,24 +267,35 @@ impl WebGL2RenderingContext {
             Some(program) => program,
             None => return,
         };
-        let groups = [
-            [
+        let groups: [&[u32]; 3] = [
+            &[
                 constants::INT,
                 constants::INT_VEC2,
                 constants::INT_VEC3,
                 constants::INT_VEC4,
             ],
-            [
+            &[
                 constants::UNSIGNED_INT,
                 constants::UNSIGNED_INT_VEC2,
                 constants::UNSIGNED_INT_VEC3,
                 constants::UNSIGNED_INT_VEC4,
             ],
-            [
+            // Matrix attributes (one location per column) are float attributes too; leaving them out made every
+            // draw with a mat4 attribute (three.js instanced meshes) raise INVALID_OPERATION.
+            &[
                 constants::FLOAT,
                 constants::FLOAT_VEC2,
                 constants::FLOAT_VEC3,
                 constants::FLOAT_VEC4,
+                constants::FLOAT_MAT2,
+                constants::FLOAT_MAT3,
+                constants::FLOAT_MAT4,
+                constants::FLOAT_MAT2x3,
+                constants::FLOAT_MAT2x4,
+                constants::FLOAT_MAT3x2,
+                constants::FLOAT_MAT3x4,
+                constants::FLOAT_MAT4x2,
+                constants::FLOAT_MAT4x3,
             ],
         ];
         let vao = self.current_vao(cx);
@@ -3283,6 +3294,120 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
         Ok(())
     }
 
+    /// <https://www.khronos.org/registry/webgl/specs/latest/2.0/#3.7.6>
+    #[expect(clippy::too_many_arguments)]
+    fn TexSubImage3D(
+        &self,
+        no_gc: &NoGC,
+        target: u32,
+        level: i32,
+        xoffset: i32,
+        yoffset: i32,
+        zoffset: i32,
+        width: i32,
+        height: i32,
+        depth: i32,
+        format: u32,
+        type_: u32,
+        src_data: CustomAutoRooterGuard<Option<ArrayBufferView>>,
+        src_offset: u32,
+    ) -> Fallible<()> {
+        // Uploading from a pixel unpack buffer is not supported here yet.
+        if self.bound_pixel_unpack_buffer.get().is_some() {
+            self.base.webgl_error(InvalidOperation);
+            return Ok(());
+        }
+        let target = match TexImageTarget::from_gl_constant(target) {
+            Some(t) if t.dimensions() == 3 => t,
+            _ => {
+                self.base.webgl_error(InvalidEnum);
+                return Ok(());
+            },
+        };
+        if level < 0 || width < 0 || height < 0 || depth < 0 {
+            self.base.webgl_error(InvalidValue);
+            return Ok(());
+        }
+        let Some(texture) = self.base.textures().active_texture_for_image_target(target) else {
+            self.base.webgl_error(InvalidOperation);
+            return Ok(());
+        };
+        let level = level as u32;
+        let Some(info) = texture.image_info_for_target(&target, level) else {
+            self.base.webgl_error(InvalidOperation);
+            return Ok(());
+        };
+        if xoffset < 0 ||
+            yoffset < 0 ||
+            zoffset < 0 ||
+            xoffset as u32 + width as u32 > info.width() ||
+            yoffset as u32 + height as u32 > info.height() ||
+            zoffset as u32 + depth as u32 > info.depth()
+        {
+            self.base.webgl_error(InvalidValue);
+            return Ok(());
+        }
+        let (Some(format_enum), Some(data_type)) =
+            (TexFormat::from_gl_constant(format), TexDataType::from_gl_constant_webgl2(type_))
+        else {
+            self.base.webgl_error(InvalidEnum);
+            return Ok(());
+        };
+        if format_enum != info.internal_format().to_unsized() {
+            self.base.webgl_error(InvalidOperation);
+            return Ok(());
+        }
+        let Some(ref data) = *src_data else {
+            self.base.webgl_error(InvalidValue);
+            return Ok(());
+        };
+        let (alpha_treatment, y_axis_treatment) =
+            self.base.get_current_unpack_state(Alpha::NotPremultiplied);
+        if alpha_treatment.is_some() || y_axis_treatment == YAxisTreatment::Flipped {
+            self.base.webgl_error(InvalidOperation);
+            return Ok(());
+        }
+        if width == 0 || height == 0 || depth == 0 {
+            return Ok(());
+        }
+
+        let unpacking_alignment = self.base.texture_unpacking_alignment();
+        let element_size = data_type.element_size();
+        let components_per_element = data_type.components_per_element();
+        let components = format_enum.components();
+        let (width, height, depth) = (width as u32, height as u32, depth as u32);
+        let cpp = element_size * components / components_per_element;
+        let mut padding = (cpp * width) % unpacking_alignment;
+        if padding > 0 {
+            padding = unpacking_alignment - padding;
+        }
+        let bytes_per_row = cpp * width + padding;
+        let expected = bytes_per_row * height * (depth - 1) + bytes_per_row * (height - 1) + cpp * width;
+
+        let bytes = data.as_slice_safe(no_gc).unwrap_or(&[]);
+        let offset = src_offset as usize * element_size as usize;
+        if offset > bytes.len() || bytes.len() - offset < expected as usize {
+            self.base.webgl_error(InvalidOperation);
+            return Ok(());
+        }
+        let effective_data_type = self.base.extension_manager().effective_type(type_);
+        self.base.send_command(WebGLCommand::TexSubImage3D {
+            target: target.as_gl_constant(),
+            level,
+            xoffset,
+            yoffset,
+            zoffset,
+            width,
+            height,
+            depth,
+            format,
+            effective_data_type,
+            unpacking_alignment,
+            data: GenericSharedMemory::from_bytes(&bytes[offset..offset + expected as usize]).into(),
+        });
+        Ok(())
+    }
+
     /// <https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.8>
     fn TexImage2D(
         &self,
@@ -3732,13 +3857,17 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
             None => handle_potential_webgl_error!(self.base, get_default_formats(), return),
         };
 
-        if bits.intersects(BlitFrameBufferFlags::COLOR) && src_color != dst_color {
+        // OpenGL ES 3.0 §4.3.3: "If a buffer is specified in mask and does not exist in both the read and draw
+        // framebuffers, the corresponding bit is silently ignored." Only buffers present on both sides must match,
+        // so resolving a multisampled color+depth target into a color-only framebuffer (three.js MSAA) is valid.
+        let mismatch = |a: Option<u32>, b: Option<u32>| matches!((a, b), (Some(a), Some(b)) if a != b);
+        if bits.intersects(BlitFrameBufferFlags::COLOR) && mismatch(src_color, dst_color) {
             return self.base.webgl_error(InvalidOperation);
         }
-        if bits.intersects(BlitFrameBufferFlags::DEPTH) && src_depth != dst_depth {
+        if bits.intersects(BlitFrameBufferFlags::DEPTH) && mismatch(src_depth, dst_depth) {
             return self.base.webgl_error(InvalidOperation);
         }
-        if bits.intersects(BlitFrameBufferFlags::STENCIL) && src_stencil != dst_stencil {
+        if bits.intersects(BlitFrameBufferFlags::STENCIL) && mismatch(src_stencil, dst_stencil) {
             return self.base.webgl_error(InvalidOperation);
         }
 

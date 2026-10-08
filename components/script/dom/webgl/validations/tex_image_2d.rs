@@ -5,7 +5,7 @@
 use std::{self, cmp, fmt};
 
 use servo_canvas_traits::webgl::WebGLError::*;
-use servo_canvas_traits::webgl::{TexDataType, TexFormat};
+use servo_canvas_traits::webgl::{TexDataType, TexFormat, WebGLVersion};
 
 use super::WebGLValidator;
 use super::types::TexImageTarget;
@@ -193,8 +193,12 @@ impl WebGLValidator for CommonTexImage2DValidator<'_> {
         }
 
         // GL_INVALID_VALUE is generated if level is greater than zero and the
-        // texture is not power of two.
-        if level > 0 && (!width.is_power_of_two() || !height.is_power_of_two()) {
+        // texture is not power of two. WebGL 2 (OpenGL ES 3.0) lifts this
+        // restriction: non-power-of-two textures may have mipmaps.
+        if level > 0 &&
+            self.context.webgl_version() == WebGLVersion::WebGL1 &&
+            (!width.is_power_of_two() || !height.is_power_of_two())
+        {
             self.context.webgl_error(InvalidValue);
             return Err(TexImageValidationError::NonPotTexture);
         }
@@ -318,7 +322,11 @@ impl WebGLValidator for TexImage2DValidator<'_> {
 
         // GL_INVALID_ENUM is generated if format or data_type is not an
         // accepted value.
-        let data_type = match TexDataType::from_gl_constant(self.data_type) {
+        let data_type = match if context.webgl_version() == WebGLVersion::WebGL2 {
+            TexDataType::from_gl_constant_webgl2(self.data_type)
+        } else {
+            TexDataType::from_gl_constant(self.data_type)
+        } {
             Some(data_type) if data_type.required_webgl_version() <= context.webgl_version() => {
                 data_type
             },
@@ -694,6 +702,8 @@ pub(crate) struct TexStorageValidator<'a> {
     common_validator: CommonTexImage2DValidator<'a>,
     dimensions: u8,
     depth: i32,
+    /// The number of levels to allocate; the common validator checks level 0.
+    levels: i32,
 }
 
 pub(crate) struct TexStorageValidatorResult {
@@ -722,7 +732,7 @@ impl<'a> TexStorageValidator<'a> {
             common_validator: CommonTexImage2DValidator::new(
                 context,
                 target,
-                levels,
+                0,
                 internal_format,
                 width,
                 height,
@@ -730,6 +740,7 @@ impl<'a> TexStorageValidator<'a> {
             ),
             dimensions,
             depth,
+            levels,
         }
     }
 }
@@ -740,15 +751,67 @@ impl WebGLValidator for TexStorageValidator<'_> {
 
     fn validate(self) -> Result<Self::ValidatedOutput, TexImageValidationError> {
         let context = self.common_validator.context;
+        // The common validator only knows 2D targets, so texStorage3D always failed with INVALID_ENUM. Validate 3D
+        // and 2D-array targets here against the 3D texture limits instead.
+        let three_d_target = TexImageTarget::from_gl_constant(self.common_validator.target)
+            .filter(|target| target.dimensions() == 3);
         let CommonTexImage2DValidatorResult {
             texture,
             target,
-            level,
+            level: _,
             internal_format,
             width,
             height,
             border: _,
-        } = self.common_validator.validate()?;
+        } = match three_d_target {
+            Some(target) => {
+                let Some(texture) = context.textures().active_texture_for_image_target(target) else {
+                    context.webgl_error(InvalidOperation);
+                    return Err(TexImageValidationError::TextureTargetNotBound(
+                        target.as_gl_constant(),
+                    ));
+                };
+                let internal_format = match TexFormat::from_gl_constant(
+                    self.common_validator.internal_format,
+                ) {
+                    Some(format)
+                        if format.required_webgl_version() <= context.webgl_version() &&
+                            format.usable_as_internal() =>
+                    {
+                        format
+                    },
+                    _ => {
+                        context.webgl_error(InvalidEnum);
+                        return Err(TexImageValidationError::InvalidTextureFormat);
+                    },
+                };
+                let (width, height) = (self.common_validator.width, self.common_validator.height);
+                if width < 1 || height < 1 {
+                    context.webgl_error(InvalidValue);
+                    return Err(TexImageValidationError::NegativeDimension);
+                }
+                let max = context.limits().max_3d_tex_size;
+                if width as u32 > max || height as u32 > max || self.depth as u32 > max {
+                    context.webgl_error(InvalidValue);
+                    return Err(TexImageValidationError::TextureTooBig);
+                }
+                CommonTexImage2DValidatorResult {
+                    texture,
+                    target,
+                    level: 0,
+                    internal_format,
+                    width: width as u32,
+                    height: height as u32,
+                    border: 0,
+                }
+            },
+            None => self.common_validator.validate()?,
+        };
+        if self.levels < 0 {
+            context.webgl_error(InvalidValue);
+            return Err(TexImageValidationError::NegativeLevel);
+        }
+        let level = self.levels as u32;
 
         if self.depth < 1 {
             context.webgl_error(InvalidValue);
