@@ -900,6 +900,24 @@ impl CanvasState {
                         },
                     }
                 },
+                // A WebGL canvas is drawn from a snapshot of its drawing buffer, as an offscreen one is above.
+                #[cfg(feature = "webgl")]
+                RenderingContext::WebGL(_) | RenderingContext::WebGL2(_) => {
+                    let Some(snapshot) = context.get_image_data() else {
+                        return Ok(());
+                    };
+
+                    self.send_canvas_command(CanvasCommand::DrawImage(
+                        snapshot.to_shared(),
+                        dest_rect,
+                        source_rect,
+                        smoothing_enabled,
+                        self.state.borrow().shadow_options(),
+                        self.state.borrow().composition_options(),
+                        self.state.borrow().transform,
+                    ));
+                },
+                #[allow(unreachable_patterns)]
                 _ => return Err(Error::InvalidState(None)),
             }
         } else {

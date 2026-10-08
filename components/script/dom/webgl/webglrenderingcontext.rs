@@ -2104,11 +2104,14 @@ impl CanvasContext for WebGLRenderingContext {
             sender,
         ));
         let (data, alpha_mode) = receiver.recv().unwrap();
+        // glReadPixels returns rows bottom first; a canvas snapshot (toDataURL, drawImage) is top first.
+        let mut data = data.to_vec();
+        pixels::flip_y_rgba8_image_inplace(size, &mut data);
         Some(Snapshot::from_vec(
             size.cast(),
             SnapshotPixelFormat::RGBA,
             alpha_mode,
-            data.to_vec(),
+            data,
         ))
     }
 
