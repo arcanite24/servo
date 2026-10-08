@@ -3347,9 +3347,10 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
             self.base.webgl_error(InvalidValue);
             return Ok(());
         }
-        let (Some(format_enum), Some(data_type)) =
-            (TexFormat::from_gl_constant(format), TexDataType::from_gl_constant_webgl2(type_))
-        else {
+        let (Some(format_enum), Some(data_type)) = (
+            TexFormat::from_gl_constant(format),
+            TexDataType::from_gl_constant_webgl2(type_),
+        ) else {
             self.base.webgl_error(InvalidEnum);
             return Ok(());
         };
@@ -3382,7 +3383,8 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
             padding = unpacking_alignment - padding;
         }
         let bytes_per_row = cpp * width + padding;
-        let expected = bytes_per_row * height * (depth - 1) + bytes_per_row * (height - 1) + cpp * width;
+        let expected =
+            bytes_per_row * height * (depth - 1) + bytes_per_row * (height - 1) + cpp * width;
 
         let bytes = data.as_slice_safe(no_gc).unwrap_or(&[]);
         let offset = src_offset as usize * element_size as usize;
@@ -3403,7 +3405,8 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
             format,
             effective_data_type,
             unpacking_alignment,
-            data: GenericSharedMemory::from_bytes(&bytes[offset..offset + expected as usize]).into(),
+            data: GenericSharedMemory::from_bytes(&bytes[offset..offset + expected as usize])
+                .into(),
         });
         Ok(())
     }
@@ -3860,7 +3863,8 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
         // OpenGL ES 3.0 §4.3.3: "If a buffer is specified in mask and does not exist in both the read and draw
         // framebuffers, the corresponding bit is silently ignored." Only buffers present on both sides must match,
         // so resolving a multisampled color+depth target into a color-only framebuffer (three.js MSAA) is valid.
-        let mismatch = |a: Option<u32>, b: Option<u32>| matches!((a, b), (Some(a), Some(b)) if a != b);
+        let mismatch =
+            |a: Option<u32>, b: Option<u32>| matches!((a, b), (Some(a), Some(b)) if a != b);
         if bits.intersects(BlitFrameBufferFlags::COLOR) && mismatch(src_color, dst_color) {
             return self.base.webgl_error(InvalidOperation);
         }

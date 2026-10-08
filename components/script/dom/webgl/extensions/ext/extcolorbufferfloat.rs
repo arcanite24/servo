@@ -41,7 +41,10 @@ impl WebGLExtension for EXTColorBufferFloat {
         // Rendering to float formats is core in desktop OpenGL 3.0+ (which every WebGL 2 context runs on); OpenGL ES
         // needs the extension.
         !ext.is_gles() ||
-            ext.supports_any_gl_extension(&["GL_EXT_color_buffer_float", "GL_EXT_color_buffer_half_float"])
+            ext.supports_any_gl_extension(&[
+                "GL_EXT_color_buffer_float",
+                "GL_EXT_color_buffer_half_float",
+            ])
     }
 
     fn enable(_ext: &WebGLExtensions) {}

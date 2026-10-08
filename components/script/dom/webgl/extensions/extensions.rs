@@ -25,10 +25,10 @@ use crate::dom::bindings::codegen::Bindings::OESTextureHalfFloatBinding::OESText
 use crate::dom::bindings::codegen::Bindings::OESVertexArrayObjectBinding::OESVertexArrayObjectConstants;
 use crate::dom::bindings::codegen::Bindings::WebGLRenderingContextBinding::WebGLRenderingContextConstants as constants;
 use crate::dom::bindings::trace::JSTraceable;
+use crate::dom::webgl::extensions::extcolorbufferfloat::EXTColorBufferFloat;
 use crate::dom::webgl::extensions::extcolorbufferhalffloat::EXTColorBufferHalfFloat;
 use crate::dom::webgl::extensions::oestexturefloat::OESTextureFloat;
 use crate::dom::webgl::extensions::oestexturehalffloat::OESTextureHalfFloat;
-use crate::dom::webgl::extensions::extcolorbufferfloat::EXTColorBufferFloat;
 use crate::dom::webgl::extensions::webglcolorbufferfloat::WEBGLColorBufferFloat;
 use crate::dom::webgl::webglrenderingcontext::WebGLRenderingContext;
 use crate::dom::webgl::webgltexture::TexCompression;

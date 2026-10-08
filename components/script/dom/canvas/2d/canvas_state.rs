@@ -2833,12 +2833,18 @@ pub(crate) fn round_rect_radii(
         [a, b] => [*a, *b, *a, *b],
         [a, b, c] => [*a, *b, *c, *b],
         [a, b, c, d] => [*a, *b, *c, *d],
-        _ => return Err(Error::Range(c"roundRect radii must have 1 to 4 entries".to_owned())),
+        _ => {
+            return Err(Error::Range(
+                c"roundRect radii must have 1 to 4 entries".to_owned(),
+            ));
+        },
     };
     // Step 6. A negative radius throws a RangeError (non-finite radii make the call a no-op, handled by callers
     // through the zero-size path below).
     if corners.iter().any(|r| r.is_finite() && *r < 0.0) {
-        return Err(Error::Range(c"roundRect radii must not be negative".to_owned()));
+        return Err(Error::Range(
+            c"roundRect radii must not be negative".to_owned(),
+        ));
     }
     Ok(corners.map(|r| if r.is_finite() { r } else { 0.0 }))
 }

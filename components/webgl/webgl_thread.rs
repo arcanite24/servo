@@ -2538,7 +2538,13 @@ impl WebGLImpl {
                 let buffers: Vec<u32> = if state.drawing_to_default_framebuffer {
                     buffers
                         .iter()
-                        .map(|&b| if b == gl::BACK { gl::COLOR_ATTACHMENT0 } else { b })
+                        .map(|&b| {
+                            if b == gl::BACK {
+                                gl::COLOR_ATTACHMENT0
+                            } else {
+                                b
+                            }
+                        })
                         .collect()
                 } else {
                     buffers.clone()

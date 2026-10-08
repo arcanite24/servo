@@ -765,26 +765,26 @@ impl WebGLValidator for TexStorageValidator<'_> {
             border: _,
         } = match three_d_target {
             Some(target) => {
-                let Some(texture) = context.textures().active_texture_for_image_target(target) else {
+                let Some(texture) = context.textures().active_texture_for_image_target(target)
+                else {
                     context.webgl_error(InvalidOperation);
                     return Err(TexImageValidationError::TextureTargetNotBound(
                         target.as_gl_constant(),
                     ));
                 };
-                let internal_format = match TexFormat::from_gl_constant(
-                    self.common_validator.internal_format,
-                ) {
-                    Some(format)
-                        if format.required_webgl_version() <= context.webgl_version() &&
-                            format.usable_as_internal() =>
-                    {
-                        format
-                    },
-                    _ => {
-                        context.webgl_error(InvalidEnum);
-                        return Err(TexImageValidationError::InvalidTextureFormat);
-                    },
-                };
+                let internal_format =
+                    match TexFormat::from_gl_constant(self.common_validator.internal_format) {
+                        Some(format)
+                            if format.required_webgl_version() <= context.webgl_version() &&
+                                format.usable_as_internal() =>
+                        {
+                            format
+                        },
+                        _ => {
+                            context.webgl_error(InvalidEnum);
+                            return Err(TexImageValidationError::InvalidTextureFormat);
+                        },
+                    };
                 let (width, height) = (self.common_validator.width, self.common_validator.height);
                 if width < 1 || height < 1 {
                     context.webgl_error(InvalidValue);
