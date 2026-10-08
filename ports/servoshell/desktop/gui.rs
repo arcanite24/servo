@@ -393,7 +393,7 @@ impl Gui {
             // TODO: While in fullscreen add some way to mitigate the increased phishing risk
             // when not displaying the URL bar: https://github.com/servo/servo/issues/32443
             // Show toolbar unless fullscreen is from document (web API)
-            if !headed_window.is_fullscreen_from_document() {
+            if headed_window.shows_toolbar() {
                 let frame = egui::Frame::default()
                     .fill(ctx.style().visuals.window_fill)
                     .inner_margin(4.0);

@@ -73,6 +73,10 @@ pub struct HeadedWindow {
     /// Whether the page holds the pointer lock: the cursor is hidden and held, and raw mouse
     /// motion goes to the page as movement.
     pointer_locked: Cell<bool>,
+    /// Application mode (`--app`): no toolbar, and the page is asked before the window closes.
+    app_mode: bool,
+    /// The page has been asked to close (application mode); a second request closes at once.
+    close_requested: Cell<bool>,
     device_pixel_ratio_override: Option<f32>,
     xr_window_poses: RefCell<Vec<Rc<XRWindowPose>>>,
     modifiers_state: Cell<ModifiersState>,
@@ -203,6 +207,8 @@ impl HeadedWindow {
             fullscreen: Cell::new(false),
             fullscreen_from_document: Cell::new(false),
             pointer_locked: Cell::new(false),
+            app_mode: servoshell_preferences.app_mode,
+            close_requested: Cell::new(false),
             inner_size: Cell::new(inner_size),
             screen_size,
             device_pixel_ratio_override: servoshell_preferences.device_pixel_ratio_override,
@@ -343,6 +349,30 @@ impl HeadedWindow {
             point.into(),
             movement,
         )));
+    }
+
+    /// Close the window, or in application mode ask the page first: a cancelable
+    /// `servo-close-requested` event on `window`. A page that cancels it closes itself when it is
+    /// ready (its host ends the process, or it calls `window.close()`); otherwise, or on a second
+    /// request, the window closes now.
+    fn request_close(&self, webview: &WebView, window: Rc<ServoShellWindow>) {
+        if !self.app_mode || self.close_requested.replace(true) {
+            window.schedule_close();
+            return;
+        }
+        webview.evaluate_javascript(
+            "(() => !window.dispatchEvent(new Event('servo-close-requested', { cancelable: true })))()",
+            move |result| {
+                if !matches!(result, Ok(servo::JSValue::Boolean(true))) {
+                    window.schedule_close();
+                }
+            },
+        );
+    }
+
+    /// Whether to draw the toolbar: not in application mode, nor while the page is fullscreen.
+    pub(crate) fn shows_toolbar(&self) -> bool {
+        !self.app_mode && !self.fullscreen_from_document.get()
     }
 
     pub(crate) fn pointer_locked(&self) -> bool {
@@ -737,7 +767,7 @@ impl HeadedWindow {
                     );
                 },
                 WindowEvent::CloseRequested => {
-                    window.schedule_close();
+                    self.request_close(&webview, window.clone());
                 },
                 WindowEvent::ThemeChanged(theme) => {
                     webview.notify_theme_change(match theme {
@@ -824,10 +854,6 @@ impl HeadedWindow {
                 self.winit_window.request_redraw();
             }
         }
-    }
-
-    pub(crate) fn is_fullscreen_from_document(&self) -> bool {
-        self.fullscreen_from_document.get()
     }
 }
 

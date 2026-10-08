@@ -65,6 +65,9 @@ pub(crate) struct ServoShellPreferences {
     pub clean_shutdown: bool,
     /// Enable native window's titlebar and decorations.
     pub no_native_titlebar: bool,
+    /// Application mode (`--app`): the window shows only the page, with no toolbar, and closing
+    /// it asks the page first (see `HeadedWindow::request_close`).
+    pub app_mode: bool,
     /// URL string of the homepage.
     pub homepage: String,
     /// URL string of the search engine page with '%s' standing in for the search term.
@@ -118,6 +121,7 @@ impl Default for ServoShellPreferences {
             homepage: "https://servo.org".into(),
             initial_window_size: Size2D::new(1024, 740),
             no_native_titlebar: true,
+            app_mode: false,
             screen_size_override: None,
             simulate_touch_events: false,
             searchpage: "https://duckduckgo.com/html/?q=%s".into(),
@@ -480,6 +484,12 @@ struct CmdArgs {
     #[bpaf(short('b'), long)]
     no_native_titlebar: bool,
 
+    /// Application mode, for a single web app such as a game: no toolbar, and closing the window
+    /// first dispatches a cancelable `servo-close-requested` event at the page, which then closes
+    /// on its own terms (a second close request closes at once).
+    #[bpaf(long("app"))]
+    app_mode: bool,
+
     /// Path to an output image. The format of the image is determined by the extension.
     /// Supports all formats that `rust-image` does.
     #[bpaf(short('o'), argument("test.png"), long)]
@@ -709,6 +719,7 @@ fn parse_arguments_helper(args_without_binary: Args) -> ArgumentParsingResult {
     let servoshell_preferences = ServoShellPreferences {
         url: Some(cmd_args.url),
         no_native_titlebar: cmd_args.no_native_titlebar,
+        app_mode: cmd_args.app_mode,
         device_pixel_ratio_override: cmd_args.device_pixel_ratio,
         clean_shutdown: cmd_args.clean_shutdown,
         headless: cmd_args.headless,
