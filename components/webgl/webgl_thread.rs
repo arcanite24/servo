@@ -389,6 +389,11 @@ impl WebGLThread {
             WebGLMsg::WebGLCommand(ctx_id, command, backtrace) => {
                 self.handle_webgl_command(ctx_id, command, backtrace);
             },
+            WebGLMsg::WebGLCommands(ctx_id, commands) => {
+                for (command, backtrace) in commands {
+                    self.handle_webgl_command(ctx_id, command, backtrace);
+                }
+            },
             WebGLMsg::WebXRCommand(_command) => {
                 #[cfg(feature = "webxr")]
                 self.handle_webxr_command(_command);

@@ -130,6 +130,8 @@ pub enum WebGLMsg {
     RemoveContext(WebGLContextId),
     /// Runs a WebGLCommand in a specific WebGLContext.
     WebGLCommand(WebGLContextId, WebGLCommand, WebGLCommandBacktrace),
+    /// Runs a batch of WebGLCommands, in order, in a specific WebGLContext.
+    WebGLCommands(WebGLContextId, Vec<(WebGLCommand, WebGLCommandBacktrace)>),
     /// Runs a WebXRCommand (WebXR layers need to be created in the WebGL
     /// thread, as they may have thread affinity).
     WebXRCommand(WebXRCommand),
@@ -195,11 +197,34 @@ pub struct WebGLSLVersion {
 pub struct WebGLMsgSender {
     ctx_id: WebGLContextId,
     sender: WebGLChan,
+    /// Commands not sent yet. Every clone of this sender in a script thread (the context and its WebGL objects)
+    /// shares one queue, so commands keep their order; a copy sent to another thread starts with an empty one.
+    /// Sending each WebGL call as its own message (and often waking the WebGL thread for it) cost about 1.5 µs per
+    /// call on the script thread; batching sends them a few hundred at a time.
+    #[serde(skip)]
+    #[ignore_malloc_size_of = "Commands in flight"]
+    pending: std::sync::Arc<std::sync::Mutex<Vec<(WebGLCommand, WebGLCommandBacktrace)>>>,
 }
+
+/// The most commands queued before they are sent anyway.
+const MAX_QUEUED_COMMANDS: usize = 256;
 
 impl WebGLMsgSender {
     pub fn new(id: WebGLContextId, sender: WebGLChan) -> Self {
-        WebGLMsgSender { ctx_id: id, sender }
+        WebGLMsgSender {
+            ctx_id: id,
+            sender,
+            pending: Default::default(),
+        }
+    }
+
+    /// Sends every queued command. Called before any other message for this context, so ordering holds.
+    pub fn flush(&self) -> WebGLSendResult {
+        let batch = std::mem::take(&mut *self.pending.lock().unwrap());
+        if batch.is_empty() {
+            return Ok(());
+        }
+        self.sender.send(WebGLMsg::WebGLCommands(self.ctx_id, batch))
     }
 
     /// Returns the WebGLContextId associated to this sender
@@ -210,13 +235,20 @@ impl WebGLMsgSender {
     /// Send a WebGLCommand message
     #[inline]
     pub fn send(&self, command: WebGLCommand, backtrace: WebGLCommandBacktrace) -> WebGLSendResult {
-        self.sender
-            .send(WebGLMsg::WebGLCommand(self.ctx_id, command, backtrace))
+        let sync = command.is_sync();
+        let full = {
+            let mut pending = self.pending.lock().unwrap();
+            pending.push((command, backtrace));
+            pending.len() >= MAX_QUEUED_COMMANDS
+        };
+        // A command with a reply is waited on right away, so it (and everything before it) must go now.
+        if sync || full { self.flush() } else { Ok(()) }
     }
 
     /// Set an [`ImageKey`] on this WebGL context.
     #[inline]
     pub fn set_image_key(&self, image_key: ImageKey) {
+        let _ = self.flush();
         let _ = self
             .sender
             .send(WebGLMsg::SetImageKey(self.ctx_id, image_key));
@@ -229,12 +261,14 @@ impl WebGLMsgSender {
         size: Size2D<u32>,
         sender: GenericSender<Result<(), String>>,
     ) -> WebGLSendResult {
+        self.flush()?;
         self.sender
             .send(WebGLMsg::ResizeContext(self.ctx_id, size, sender))
     }
 
     #[inline]
     pub fn send_remove(&self) -> WebGLSendResult {
+        let _ = self.flush();
         self.sender.send(WebGLMsg::RemoveContext(self.ctx_id))
     }
 }
@@ -607,6 +641,94 @@ pub enum WebGLCommand {
     FramebufferTextureLayer(u32, u32, Option<WebGLTextureId>, i32, i32),
     ReadBuffer(u32),
     DrawBuffers(Vec<u32>),
+}
+
+impl WebGLCommand {
+    /// Whether the command carries a reply channel, so the caller blocks until the WebGL thread answers. Such a
+    /// command flushes the sender's queue (see `WebGLMsgSender::send`). Generated from the variants with a `Sender`.
+    pub fn is_sync(&self) -> bool {
+        matches!(
+            self,
+            WebGLCommand::GetContextAttributes(..) |
+            WebGLCommand::GetBufferSubData(..) |
+            WebGLCommand::CreateBuffer(..) |
+            WebGLCommand::CreateFramebuffer(..) |
+            WebGLCommand::CreateRenderbuffer(..) |
+            WebGLCommand::CreateTexture(..) |
+            WebGLCommand::CreateProgram(..) |
+            WebGLCommand::CreateShader(..) |
+            WebGLCommand::GetExtensions(..) |
+            WebGLCommand::GetShaderPrecisionFormat(..) |
+            WebGLCommand::GetFragDataLocation(..) |
+            WebGLCommand::GetUniformLocation(..) |
+            WebGLCommand::GetShaderInfoLog(..) |
+            WebGLCommand::GetProgramInfoLog(..) |
+            WebGLCommand::GetFramebufferAttachmentParameter(..) |
+            WebGLCommand::GetRenderbufferParameter(..) |
+            WebGLCommand::CreateTransformFeedback(..) |
+            WebGLCommand::IsTransformFeedback(..) |
+            WebGLCommand::GetTransformFeedbackVarying(..) |
+            WebGLCommand::ReadPixels(..) |
+            WebGLCommand::FenceSync(..) |
+            WebGLCommand::IsSync(..) |
+            WebGLCommand::ClientWaitSync(..) |
+            WebGLCommand::GetSyncParameter(..) |
+            WebGLCommand::LinkProgram(..) |
+            WebGLCommand::DrawingBufferWidth(..) |
+            WebGLCommand::DrawingBufferHeight(..) |
+            WebGLCommand::Finish(..) |
+            WebGLCommand::CreateVertexArray(..) |
+            WebGLCommand::GetParameterBool(..) |
+            WebGLCommand::GetParameterBool4(..) |
+            WebGLCommand::GetParameterInt(..) |
+            WebGLCommand::GetParameterInt2(..) |
+            WebGLCommand::GetParameterInt4(..) |
+            WebGLCommand::GetParameterFloat(..) |
+            WebGLCommand::GetParameterFloat2(..) |
+            WebGLCommand::GetParameterFloat4(..) |
+            WebGLCommand::GetProgramValidateStatus(..) |
+            WebGLCommand::GetProgramActiveUniforms(..) |
+            WebGLCommand::GetCurrentVertexAttrib(..) |
+            WebGLCommand::GetTexParameterFloat(..) |
+            WebGLCommand::GetTexParameterInt(..) |
+            WebGLCommand::GetTexParameterBool(..) |
+            WebGLCommand::GetInternalFormatIntVec(..) |
+            WebGLCommand::GetUniformBool(..) |
+            WebGLCommand::GetUniformBool2(..) |
+            WebGLCommand::GetUniformBool3(..) |
+            WebGLCommand::GetUniformBool4(..) |
+            WebGLCommand::GetUniformInt(..) |
+            WebGLCommand::GetUniformInt2(..) |
+            WebGLCommand::GetUniformInt3(..) |
+            WebGLCommand::GetUniformInt4(..) |
+            WebGLCommand::GetUniformUint(..) |
+            WebGLCommand::GetUniformUint2(..) |
+            WebGLCommand::GetUniformUint3(..) |
+            WebGLCommand::GetUniformUint4(..) |
+            WebGLCommand::GetUniformFloat(..) |
+            WebGLCommand::GetUniformFloat2(..) |
+            WebGLCommand::GetUniformFloat3(..) |
+            WebGLCommand::GetUniformFloat4(..) |
+            WebGLCommand::GetUniformFloat9(..) |
+            WebGLCommand::GetUniformFloat16(..) |
+            WebGLCommand::GetUniformFloat2x3(..) |
+            WebGLCommand::GetUniformFloat2x4(..) |
+            WebGLCommand::GetUniformFloat3x2(..) |
+            WebGLCommand::GetUniformFloat3x4(..) |
+            WebGLCommand::GetUniformFloat4x2(..) |
+            WebGLCommand::GetUniformFloat4x3(..) |
+            WebGLCommand::GetUniformBlockIndex(..) |
+            WebGLCommand::GetUniformIndices(..) |
+            WebGLCommand::GetActiveUniforms(..) |
+            WebGLCommand::GetActiveUniformBlockName(..) |
+            WebGLCommand::GetActiveUniformBlockParameter(..) |
+            WebGLCommand::GenerateQuery(..) |
+            WebGLCommand::GetQueryState(..) |
+            WebGLCommand::GenerateSampler(..) |
+            WebGLCommand::GetSamplerParameterFloat(..) |
+            WebGLCommand::GetSamplerParameterInt(..)
+        )
+    }
 }
 
 /// WebXR layer management

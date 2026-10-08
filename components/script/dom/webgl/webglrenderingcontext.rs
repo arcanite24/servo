@@ -341,6 +341,8 @@ impl WebGLRenderingContext {
             return false;
         };
 
+        // Everything drawn this frame must reach the WebGL thread before the swap that presents it.
+        let _ = self.droppable.webgl_sender.flush();
         window
             .webgl_chan()
             .expect("Where's the WebGL channel?")
