@@ -157,39 +157,47 @@ impl SVGSVGElement {
                 continue;
             }
             let computed = window.GetComputedStyle(cx, original, None);
+            // Servo computes a presentation attribute that names a custom property (`fill="var(--ink)"`) as its
+            // initial value, black for fill. Substitute those attributes first, and let the substituted value win
+            // over the computed one in the clone's style.
+            let mut substituted: Vec<(&str, String)> = Vec::new();
+            for (property, name) in [
+                ("fill", local_name!("fill")),
+                ("stroke", local_name!("stroke")),
+                ("stop-color", local_name!("stop-color")),
+            ] {
+                let value = original.get_string_attribute(&name);
+                if value.str().contains("var(") {
+                    let resolved = substitute_custom_properties(&value.str(), &|custom: &str| {
+                        computed
+                            .GetPropertyValue(DOMString::from(custom))
+                            .str()
+                            .trim()
+                            .to_owned()
+                    });
+                    clone.set_string_attribute(cx, &name, DOMString::from(resolved.clone()));
+                    substituted.push((property, resolved));
+                }
+            }
             let mut declarations = String::new();
             for property in PROPERTIES {
-                let value = computed.GetPropertyValue(DOMString::from(property));
-                let value = value.str();
-                let value = value.trim();
+                let value = match substituted.iter().find(|(name, _)| *name == property) {
+                    Some((_, resolved)) => resolved.clone(),
+                    None => computed
+                        .GetPropertyValue(DOMString::from(property))
+                        .str()
+                        .trim()
+                        .to_owned(),
+                };
                 if value.is_empty() || value.contains("var(") {
                     continue;
                 }
                 declarations.push_str(property);
                 declarations.push(':');
-                declarations.push_str(value);
+                declarations.push_str(&value);
                 declarations.push(';');
             }
             // Not `display`: Servo does not lay out SVG content, and computes `display: none` for a <g>.
-            // Attributes still name custom properties the image cannot resolve; the style above wins over
-            // presentation attributes, so only `var()` left in other attributes needs substituting.
-            for name in [
-                local_name!("fill"),
-                local_name!("stroke"),
-                local_name!("stop-color"),
-            ] {
-                let value = original.get_string_attribute(&name);
-                if value.str().contains("var(") {
-                    let resolved = substitute_custom_properties(&value.str(), &|property: &str| {
-                        computed
-                            .GetPropertyValue(DOMString::from(property))
-                            .str()
-                            .trim()
-                            .to_owned()
-                    });
-                    clone.set_string_attribute(cx, &name, DOMString::from(resolved));
-                }
-            }
             clone.set_string_attribute(cx, &local_name!("style"), DOMString::from(declarations));
         }
     }
