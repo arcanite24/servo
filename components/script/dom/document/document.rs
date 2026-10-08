@@ -4028,7 +4028,14 @@ impl Document {
             declarative_refresh: Default::default(),
             resize_observers: Default::default(),
             fonts: Default::default(),
-            visibility_state: Cell::new(DocumentVisibilityState::Hidden),
+            // A new document takes its navigable's system visibility, visible for a shown webview
+            // (https://html.spec.whatwg.org/multipage/#initialise-the-document-object); documents without a
+            // browsing context stay hidden.
+            visibility_state: Cell::new(if has_browsing_context {
+                DocumentVisibilityState::Visible
+            } else {
+                DocumentVisibilityState::Hidden
+            }),
             status_code,
             is_initial_about_blank: Cell::new(is_initial_about_blank),
             allow_declarative_shadow_roots: Cell::new(allow_declarative_shadow_roots),
