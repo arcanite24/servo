@@ -2994,9 +2994,6 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
                     retval,
                 )
             },
-            constants::SAMPLER_3D | constants::SAMPLER_2D_ARRAY => {
-                retval.set(Int32Value(uniform_get(triple, WebGLCommand::GetUniformInt)))
-            },
             _ => self.base.GetUniform(cx, program, location, retval),
         }
     }

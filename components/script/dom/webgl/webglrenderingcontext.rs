@@ -1750,22 +1750,15 @@ impl WebGLRenderingContext {
     ) {
         self.with_location(location, |location| {
             match location.type_() {
-                constants::BOOL |
-                constants::INT |
-                constants::SAMPLER_2D |
-                WebGL2RenderingContextConstants::SAMPLER_2D_ARRAY |
-                WebGL2RenderingContextConstants::SAMPLER_3D |
-                constants::SAMPLER_CUBE => {},
+                constants::BOOL | constants::INT => {},
+                sampler if is_sampler_type(sampler) => {},
                 _ => return Err(InvalidOperation),
             }
 
             let val = self.uniform_vec_section_int(val, src_offset, src_length, 1, location)?;
 
             match location.type_() {
-                constants::SAMPLER_2D |
-                constants::SAMPLER_CUBE |
-                WebGL2RenderingContextConstants::SAMPLER_2D_ARRAY |
-                WebGL2RenderingContextConstants::SAMPLER_3D => {
+                sampler if is_sampler_type(sampler) => {
                     for &v in val
                         .iter()
                         .take(cmp::min(location.size().unwrap_or(1) as usize, val.len()))
@@ -4154,10 +4147,7 @@ impl WebGLRenderingContextMethods<crate::DomTypeHolder> for WebGLRenderingContex
         self.with_location(location, |location| {
             match location.type_() {
                 constants::BOOL | constants::INT => {},
-                constants::SAMPLER_2D |
-                WebGL2RenderingContextConstants::SAMPLER_3D |
-                WebGL2RenderingContextConstants::SAMPLER_2D_ARRAY |
-                constants::SAMPLER_CUBE => {
+                sampler if is_sampler_type(sampler) => {
                     if val < 0 || val as u32 >= self.limits.max_combined_texture_image_units {
                         return Err(InvalidValue);
                     }
@@ -4358,11 +4348,10 @@ impl WebGLRenderingContextMethods<crate::DomTypeHolder> for WebGLRenderingContex
             constants::BOOL_VEC4 => {
                 uniform_get(triple, WebGLCommand::GetUniformBool4).to_jsval(cx, rval)
             },
-            constants::INT |
-            constants::SAMPLER_2D |
-            constants::SAMPLER_CUBE |
-            WebGL2RenderingContextConstants::SAMPLER_2D_ARRAY |
-            WebGL2RenderingContextConstants::SAMPLER_3D => {
+            constants::INT => {
+                rval.set(Int32Value(uniform_get(triple, WebGLCommand::GetUniformInt)))
+            },
+            sampler if is_sampler_type(sampler) => {
                 rval.set(Int32Value(uniform_get(triple, WebGLCommand::GetUniformInt)))
             },
             constants::INT_VEC2 => unsafe {
@@ -5300,4 +5289,28 @@ fn array_buffer_type_to_sized_type(type_: Type) -> Option<SizedDataType> {
         Type::Int64 |
         Type::Simd128 => None,
     }
+}
+
+/// Whether a uniform of this type is a sampler, which `uniform1i(v)` sets to a texture unit:
+/// <https://registry.khronos.org/webgl/specs/latest/2.0/#3.7.8>. WebGL 2 adds 3D, array,
+/// shadow, and integer samplers; three.js shadow maps are `sampler2DShadow`.
+pub(crate) fn is_sampler_type(gl_type: u32) -> bool {
+    matches!(
+        gl_type,
+        constants::SAMPLER_2D |
+            constants::SAMPLER_CUBE |
+            WebGL2RenderingContextConstants::SAMPLER_3D |
+            WebGL2RenderingContextConstants::SAMPLER_2D_ARRAY |
+            WebGL2RenderingContextConstants::SAMPLER_2D_SHADOW |
+            WebGL2RenderingContextConstants::SAMPLER_CUBE_SHADOW |
+            WebGL2RenderingContextConstants::SAMPLER_2D_ARRAY_SHADOW |
+            WebGL2RenderingContextConstants::INT_SAMPLER_2D |
+            WebGL2RenderingContextConstants::INT_SAMPLER_3D |
+            WebGL2RenderingContextConstants::INT_SAMPLER_CUBE |
+            WebGL2RenderingContextConstants::INT_SAMPLER_2D_ARRAY |
+            WebGL2RenderingContextConstants::UNSIGNED_INT_SAMPLER_2D |
+            WebGL2RenderingContextConstants::UNSIGNED_INT_SAMPLER_3D |
+            WebGL2RenderingContextConstants::UNSIGNED_INT_SAMPLER_CUBE |
+            WebGL2RenderingContextConstants::UNSIGNED_INT_SAMPLER_2D_ARRAY
+    )
 }
