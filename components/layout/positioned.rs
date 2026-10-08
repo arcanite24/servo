@@ -14,7 +14,7 @@ use rayon::prelude::{IndexedParallelIterator, ParallelIterator};
 use servo_arc::Arc as ServoArc;
 use style::Zero;
 use style::computed_values::position::T as Position;
-use style::logical_geometry::{Direction, WritingMode};
+use style::logical_geometry::{Direction, PhysicalSide, WritingMode};
 use style::properties::ComputedValues;
 use style::values::specified::align::AlignFlags;
 
@@ -1023,12 +1023,38 @@ impl AbsoluteAxisSolver {
             // https://drafts.csswg.org/css-align/#valdef-self-position-self-end
             AlignFlags::SELF_END if self_value_matches_container() => AlignFlags::END,
             AlignFlags::SELF_END => AlignFlags::START,
+            // `left`/`right` on the block axis. These are physical edges, so
+            // they only make sense when the block axis is horizontal:
+            // - Vertical block axis (horizontal writing mode): perpendicular to
+            //   left↔right, so both keywords behave as `start`.
+            // - Horizontal block axis (vertical writing mode): align to the
+            //   requested physical edge, which is the block-start edge when the
+            //   two happen to coincide (e.g. `left` in vertical-lr).
             // https://drafts.csswg.org/css-align/#valdef-justify-content-left
-            AlignFlags::LEFT if self.axis == Direction::Block => AlignFlags::START,
+            AlignFlags::LEFT if self.axis == Direction::Block => {
+                if alignment_container_writing_mode.is_horizontal() ||
+                    alignment_container_writing_mode.block_start_physical_side() ==
+                        PhysicalSide::Left
+                {
+                    AlignFlags::START
+                } else {
+                    AlignFlags::END
+                }
+            },
+            // https://drafts.csswg.org/css-align/#valdef-justify-content-right
+            AlignFlags::RIGHT if self.axis == Direction::Block => {
+                if alignment_container_writing_mode.is_horizontal() ||
+                    alignment_container_writing_mode.block_start_physical_side() ==
+                        PhysicalSide::Right
+                {
+                    AlignFlags::START
+                } else {
+                    AlignFlags::END
+                }
+            },
+            // On the inline axis these keywords are line-left / line-right.
             AlignFlags::LEFT if alignment_container_writing_mode.is_bidi_ltr() => AlignFlags::START,
             AlignFlags::LEFT => AlignFlags::END,
-            // https://drafts.csswg.org/css-align/#valdef-justify-content-right
-            AlignFlags::RIGHT if self.axis == Direction::Block => AlignFlags::START,
             AlignFlags::RIGHT if alignment_container_writing_mode.is_bidi_ltr() => AlignFlags::END,
             AlignFlags::RIGHT => AlignFlags::START,
             // https://drafts.csswg.org/css-align/#valdef-self-position-end
