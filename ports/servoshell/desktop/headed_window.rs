@@ -70,6 +70,9 @@ pub struct HeadedWindow {
     inner_size: Cell<PhysicalSize<u32>>,
     fullscreen: Cell<bool>,
     fullscreen_from_document: Cell<bool>,
+    /// Whether the page holds the pointer lock: the cursor is hidden and held, and raw mouse
+    /// motion goes to the page as movement.
+    pointer_locked: Cell<bool>,
     device_pixel_ratio_override: Option<f32>,
     xr_window_poses: RefCell<Vec<Rc<XRWindowPose>>>,
     modifiers_state: Cell<ModifiersState>,
@@ -199,6 +202,7 @@ impl HeadedWindow {
             webview_relative_mouse_point: Cell::new(Point2D::zero()),
             fullscreen: Cell::new(false),
             fullscreen_from_document: Cell::new(false),
+            pointer_locked: Cell::new(false),
             inner_size: Cell::new(inner_size),
             screen_size,
             device_pixel_ratio_override: servoshell_preferences.device_pixel_ratio_override,
@@ -324,6 +328,25 @@ impl HeadedWindow {
         }
 
         webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point.into())));
+    }
+
+    /// Raw mouse motion from the device. While the pointer is locked the cursor holds still,
+    /// so this is the only record of the motion; send it to the page as movement in CSS pixels.
+    pub(crate) fn handle_raw_mouse_motion(&self, webview: &WebView, delta: (f64, f64)) {
+        if !self.pointer_locked.get() {
+            return;
+        }
+        let scale = self.hidpi_scale_factor().get() as f64;
+        let movement = ((delta.0 / scale) as f32, (delta.1 / scale) as f32);
+        let point = self.webview_relative_mouse_point.get();
+        webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new_with_movement(
+            point.into(),
+            movement,
+        )));
+    }
+
+    pub(crate) fn pointer_locked(&self) -> bool {
+        self.pointer_locked.get()
     }
 
     /// Handle key events before sending them to Servo.
@@ -652,8 +675,19 @@ impl HeadedWindow {
                 WindowEvent::MouseInput { state, button, .. } => {
                     self.handle_mouse_button_event(&webview, button, state);
                 },
+                // A held cursor can still report moves (Confined grabs); the raw motion is
+                // what the page sees while the pointer is locked.
+                WindowEvent::CursorMoved { .. } if self.pointer_locked.get() => {},
                 WindowEvent::CursorMoved { position, .. } => {
                     self.handle_mouse_move_event(&webview, position);
+                },
+                // Leaving the window releases the lock, through the same path as Escape.
+                WindowEvent::Focused(false) if self.pointer_locked.get() => {
+                    for state in [KeyState::Down, KeyState::Up] {
+                        webview.notify_input_event(InputEvent::Keyboard(
+                            KeyboardEvent::from_state_and_key(state, Key::Named(NamedKey::Escape)),
+                        ));
+                    }
                 },
                 WindowEvent::CursorLeft { .. } => {
                     let webview_rect: Rect<_, _> = webview.size().into();
@@ -986,6 +1020,27 @@ impl PlatformWindow for HeadedWindow {
         };
         self.winit_window.set_cursor(winit_cursor);
         self.winit_window.set_cursor_visible(true);
+    }
+
+    fn set_pointer_lock(&self, locked: bool) {
+        use winit::window::CursorGrabMode;
+
+        self.pointer_locked.set(locked);
+        if locked {
+            // Locked holds the cursor in place (macOS, Wayland); Confined (Windows, X11) keeps
+            // it in the window, and moves are then ignored in favour of raw motion.
+            if let Err(error) = self
+                .winit_window
+                .set_cursor_grab(CursorGrabMode::Locked)
+                .or_else(|_| self.winit_window.set_cursor_grab(CursorGrabMode::Confined))
+            {
+                log::warn!("Could not grab the cursor for pointer lock: {error}");
+            }
+            self.winit_window.set_cursor_visible(false);
+        } else {
+            let _ = self.winit_window.set_cursor_grab(CursorGrabMode::None);
+            self.winit_window.set_cursor_visible(true);
+        }
     }
 
     fn id(&self) -> ServoShellWindowId {

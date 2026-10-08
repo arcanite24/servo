@@ -208,6 +208,15 @@ partial interface Document {
   attribute EventHandler onfullscreenerror;
 };
 
+// https://w3c.github.io/pointerlock/#extensions-to-the-document-interface
+// (`pointerLockElement` belongs to DocumentOrShadowRoot; only documents hold the lock here.)
+partial interface Document {
+  attribute EventHandler onpointerlockchange;
+  attribute EventHandler onpointerlockerror;
+  undefined exitPointerLock();
+  readonly attribute Element? pointerLockElement;
+};
+
 Document includes DocumentOrShadowRoot;
 
 // https://drafts.csswg.org/cssom-view/#extensions-to-the-document-interface

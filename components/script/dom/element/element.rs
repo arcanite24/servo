@@ -78,7 +78,8 @@ use crate::dom::attr::{Attr, is_relevant_attribute};
 use crate::dom::bindings::codegen::Bindings::AttrBinding::AttrMethods;
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentMethods;
 use crate::dom::bindings::codegen::Bindings::ElementBinding::{
-    ElementMethods, GetHTMLOptions, ScrollIntoViewContainer, ScrollLogicalPosition, ShadowRootInit,
+    ElementMethods, GetHTMLOptions, PointerLockOptions, ScrollIntoViewContainer,
+    ScrollLogicalPosition, ShadowRootInit,
 };
 use crate::dom::bindings::codegen::Bindings::EventHandlerBinding::EventHandlerNonNull;
 use crate::dom::bindings::codegen::Bindings::FunctionBinding::Function;
@@ -4094,6 +4095,15 @@ impl ElementMethods<crate::DomTypeHolder> for Element {
     fn RequestFullscreen(&self, cx: &mut CurrentRealm) -> Rc<Promise> {
         let doc = self.owner_document();
         doc.enter_fullscreen(cx, self)
+    }
+
+    /// <https://w3c.github.io/pointerlock/#dom-element-requestpointerlock>
+    fn RequestPointerLock(
+        &self,
+        cx: &mut CurrentRealm,
+        _options: &PointerLockOptions,
+    ) -> Rc<Promise> {
+        self.owner_document().request_pointer_lock(cx, self)
     }
 
     /// <https://w3c.github.io/pointerevents/#dom-element-setpointercapture>

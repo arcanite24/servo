@@ -217,6 +217,11 @@ pub enum MouseButtonAction {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct MouseMoveEvent {
     pub point: WebViewPoint,
+    /// How far the mouse moved since the previous move event, in CSS pixels, when the embedder
+    /// knows it independently of `point`. While the pointer is locked the cursor does not move,
+    /// so this carries the motion (`MouseEvent.movementX/Y`). When `None`, the movement is the
+    /// difference between this point and the previous one.
+    pub movement: Option<(f32, f32)>,
     #[doc(hidden)]
     // An internal flag used to avoid refreshing the cursor in response to move
     // events for touch devices since they are simulated in Servo using mouse events.
@@ -227,6 +232,16 @@ impl MouseMoveEvent {
     pub fn new(point: WebViewPoint) -> Self {
         Self {
             point,
+            movement: None,
+            is_compatibility_event_for_touch: false,
+        }
+    }
+
+    /// A move of the locked pointer: the cursor stays at `point` and moved by `movement` CSS pixels.
+    pub fn new_with_movement(point: WebViewPoint, movement: (f32, f32)) -> Self {
+        Self {
+            point,
+            movement: Some(movement),
             is_compatibility_event_for_touch: false,
         }
     }
@@ -235,6 +250,7 @@ impl MouseMoveEvent {
     pub fn new_compatibility_for_touch(point: WebViewPoint) -> Self {
         Self {
             point,
+            movement: None,
             is_compatibility_event_for_touch: true,
         }
     }

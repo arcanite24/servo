@@ -15,7 +15,7 @@ use servo::{
 };
 use url::Url;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::window::WindowId;
 
@@ -214,6 +214,33 @@ impl ApplicationHandler<AppEvent> for App {
         }
         // Block until the window gets an event
         event_loop.set_control_flow(ControlFlow::Wait);
+    }
+
+    fn device_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        let DeviceEvent::MouseMotion { delta } = event else {
+            return;
+        };
+        let AppState::Running(state) = &self.state else {
+            return;
+        };
+        // Raw motion only matters to a window whose page holds the pointer lock.
+        let Some(window) = state.focused_window() else {
+            return;
+        };
+        if let Some(headed_window) = window.platform_window().as_headed_window() &&
+            headed_window.pointer_locked() &&
+            let Some(webview) = window.active_webview()
+        {
+            headed_window.handle_raw_mouse_motion(&webview, delta);
+            if !self.pump_servo_event_loop(event_loop.into()) {
+                event_loop.exit();
+            }
+        }
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, app_event: AppEvent) {

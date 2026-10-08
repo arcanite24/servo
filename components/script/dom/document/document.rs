@@ -507,6 +507,8 @@ pub(crate) struct Document {
 
     /// Entry node for fullscreen.
     fullscreen_element: MutNullableDom<Element>,
+    /// <https://w3c.github.io/pointerlock/#dfn-pointer-lock-target>
+    pointer_lock_element: MutNullableDom<Element>,
     /// Map from ID to set of form control elements that have that ID as
     /// their 'form' content attribute. Used to reset form controls
     /// whenever any element with the same ID as the form attribute
@@ -778,6 +780,7 @@ impl Document {
         // > https://fullscreen.spec.whatwg.org/#model
         // > "Whenever the unloading document cleanup steps run with a document, fully exit fullscreen document."
         self.fully_exit_fullscreen(cx);
+        self.exit_pointer_lock();
 
         // Step 1. Let window be document's relevant global object.
         // Step 2. For each WebSocket object webSocket whose relevant global object is window, make disappear webSocket.
@@ -3996,6 +3999,7 @@ impl Document {
             ignore_opens_during_unload_counter: Default::default(),
             spurious_animation_frames: Cell::new(0),
             fullscreen_element: MutNullableDom::new(None),
+            pointer_lock_element: MutNullableDom::new(None),
             form_id_listener_map: Default::default(),
             interactive_time: DomRefCell::new(interactive_time),
             tti_window: DomRefCell::new(InteractiveWindow::default()),
@@ -5136,6 +5140,15 @@ impl Document {
     pub(crate) fn set_favicon(&self, favicon: Image) {
         *self.favicon.borrow_mut() = Some(favicon);
         self.notify_embedder_favicon();
+    }
+
+    /// The element holding the pointer lock, if any.
+    pub(crate) fn pointer_lock_element(&self) -> Option<DomRoot<Element>> {
+        self.pointer_lock_element.get()
+    }
+
+    pub(crate) fn set_pointer_lock_element(&self, element: Option<&Element>) {
+        self.pointer_lock_element.set(element);
     }
 
     pub(crate) fn fullscreen_element(&self) -> Option<DomRoot<Element>> {
@@ -6855,6 +6868,30 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
     /// <https://fullscreen.spec.whatwg.org/#dom-document-exitfullscreen>
     fn ExitFullscreen(&self, cx: &mut CurrentRealm) -> Rc<Promise> {
         self.exit_fullscreen(cx)
+    }
+
+    // https://w3c.github.io/pointerlock/#dom-document-onpointerlockchange
+    event_handler!(
+        pointerlockchange,
+        GetOnpointerlockchange,
+        SetOnpointerlockchange
+    );
+
+    // https://w3c.github.io/pointerlock/#dom-document-onpointerlockerror
+    event_handler!(
+        pointerlockerror,
+        GetOnpointerlockerror,
+        SetOnpointerlockerror
+    );
+
+    /// <https://w3c.github.io/pointerlock/#dom-document-exitpointerlock>
+    fn ExitPointerLock(&self) {
+        self.exit_pointer_lock();
+    }
+
+    /// <https://w3c.github.io/pointerlock/#dom-documentorshadowroot-pointerlockelement>
+    fn GetPointerLockElement(&self) -> Option<DomRoot<Element>> {
+        self.pointer_lock_element.get()
     }
 
     // check-tidy: no specs after this line

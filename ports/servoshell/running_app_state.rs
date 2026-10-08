@@ -795,6 +795,11 @@ impl WebViewDelegate for RunningAppState {
             .set_cursor(cursor);
     }
 
+    fn notify_pointer_lock_changed(&self, webview: WebView, locked: bool) {
+        self.platform_window_for_webview(&webview)
+            .set_pointer_lock(locked);
+    }
+
     fn notify_load_status_changed(&self, webview: WebView, status: LoadStatus) {
         self.window_for_webview(&webview).set_needs_update();
 

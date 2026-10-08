@@ -27,6 +27,12 @@ interface MouseEvent : UIEvent {
     boolean getModifierState (DOMString keyArg);
 };
 
+// https://w3c.github.io/pointerlock/#extensions-to-the-mouseevent-interface
+partial interface MouseEvent {
+    readonly attribute double movementX;
+    readonly attribute double movementY;
+};
+
 // https://w3c.github.io/pointerevents/#dom-mouseeventinit
 dictionary MouseEventInit : EventModifierInit {
     long           screenX = 0;

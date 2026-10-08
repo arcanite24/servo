@@ -25,6 +25,7 @@ use crate::dom::bindings::codegen::Bindings::MouseEventBinding::MouseEventMethod
 use crate::dom::bindings::codegen::Bindings::UIEventBinding::UIEventMethods;
 use crate::dom::bindings::error::Fallible;
 use crate::dom::bindings::inheritance::Castable;
+use crate::dom::bindings::num::Finite;
 use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
@@ -83,6 +84,9 @@ pub(crate) struct MouseEvent {
 
     #[no_trace]
     point_in_target: Cell<Option<Point2D<f32, CSSPixel>>>,
+
+    /// <https://w3c.github.io/pointerlock/#dom-mouseevent-movementx> and `movementY`, in CSS pixels.
+    movement: Cell<(f64, f64)>,
 }
 
 impl MouseEvent {
@@ -96,7 +100,13 @@ impl MouseEvent {
             button: Cell::new(MouseButton::Primary),
             buttons: Cell::new(MouseButtons::empty()),
             point_in_target: Cell::new(None),
+            movement: Cell::new((0., 0.)),
         }
+    }
+
+    /// Sets `movementX` and `movementY`: how far the mouse moved since the previous `mousemove`.
+    pub(crate) fn set_movement(&self, movement: (f64, f64)) {
+        self.movement.set(movement);
     }
 
     pub(crate) fn new_uninitialized(cx: &mut JSContext, window: &Window) -> DomRoot<MouseEvent> {
@@ -384,6 +394,9 @@ impl MouseEvent {
         );
 
         pointer_event.upcast::<Event>().set_composed(composed);
+        pointer_event
+            .upcast::<MouseEvent>()
+            .set_movement(self.movement.get());
 
         pointer_event
     }
@@ -639,6 +652,16 @@ impl MouseEventMethods<crate::DomTypeHolder> for MouseEvent {
     /// <https://w3c.github.io/pointerevents/#dom-mouseevent-buttons>
     fn Buttons(&self) -> u16 {
         self.buttons.get().bits()
+    }
+
+    /// <https://w3c.github.io/pointerlock/#dom-mouseevent-movementx>
+    fn MovementX(&self) -> Finite<f64> {
+        Finite::wrap(self.movement.get().0)
+    }
+
+    /// <https://w3c.github.io/pointerlock/#dom-mouseevent-movementy>
+    fn MovementY(&self) -> Finite<f64> {
+        Finite::wrap(self.movement.get().1)
     }
 
     /// <https://w3c.github.io/pointerevents/#dom-mouseevent-relatedtarget>

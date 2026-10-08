@@ -256,6 +256,14 @@ impl DocumentEventHandler {
                 self.coalesced_mouse_move_event_ids
                     .borrow_mut()
                     .push(mouse_move_event.event.id);
+                // Coalesced moves of a locked pointer still add up to the whole motion.
+                let mut event = event;
+                if let (InputEvent::MouseMove(previous), InputEvent::MouseMove(next)) =
+                    (&mouse_move_event.event.event, &mut event.event.event) &&
+                    let (Some(before), Some(after)) = (previous.movement, next.movement)
+                {
+                    next.movement = Some((before.0 + after.0, before.1 + after.1));
+                }
                 *mouse_move_event = event;
                 return;
             }
@@ -621,12 +629,60 @@ impl DocumentEventHandler {
             }
         }
 
+        let embedder_movement = match &input_event.event.event {
+            InputEvent::MouseMove(event) => event.movement,
+            _ => None,
+        };
+
+        // While the pointer is locked the cursor holds still: report the embedder's raw motion
+        // to the lock element, and leave hover state as it was.
+        if let Some(lock_target) = self.window.Document().connected_pointer_lock_element() {
+            // Synthetic input (WebDriver) moves the cursor itself: then the movement is the step.
+            let old_point = self
+                .most_recent_mousemove_point
+                .replace(Some(hit_test_result.point_in_frame));
+            let movement = embedder_movement.unwrap_or_else(|| {
+                let delta = old_point
+                    .map_or_else(Default::default, |old| hit_test_result.point_in_frame - old);
+                (delta.x, delta.y)
+            });
+            if movement == (0., 0.) {
+                return;
+            }
+            let mouse_event = MouseEvent::new_for_platform_motion_event(
+                cx,
+                &self.window,
+                FireMouseEventType::Move,
+                &hit_test_result,
+                input_event,
+            );
+            mouse_event.set_movement((movement.0 as f64, movement.1 as f64));
+            let pointer_event = mouse_event.to_pointer_event(cx, Atom::from("pointermove"));
+            pointer_event.upcast::<Event>().set_composed(true);
+            pointer_event
+                .upcast::<Event>()
+                .fire(cx, lock_target.upcast());
+            mouse_event.upcast::<Event>().fire(cx, lock_target.upcast());
+            return;
+        }
+
         let old_mouse_move_point = self
             .most_recent_mousemove_point
             .replace(Some(hit_test_result.point_in_frame));
         if old_mouse_move_point == Some(hit_test_result.point_in_frame) {
             return;
         }
+        // <https://w3c.github.io/pointerlock/#dom-mouseevent-movementx>: the embedder's own
+        // measure if it has one, otherwise the distance from the previous mousemove.
+        let movement = embedder_movement
+            .map(|(x, y)| (x as f64, y as f64))
+            .or_else(|| {
+                old_mouse_move_point.map(|old| {
+                    let delta = hit_test_result.point_in_frame - old;
+                    (delta.x as f64, delta.y as f64)
+                })
+            })
+            .unwrap_or_default();
 
         // Update the cursor when the mouse moves, if it has changed.
         self.set_cursor(Some(hit_test_result.cursor));
@@ -758,6 +814,7 @@ impl DocumentEventHandler {
             &hit_test_result,
             input_event,
         );
+        mouse_event.set_movement(movement);
 
         // Send pointermove event before mousemove.
         // If pointer capture is active, retarget the pointer/mouse events to
@@ -934,11 +991,13 @@ impl DocumentEventHandler {
                 .set_sequential_focus_navigation_starting_point(&hit_test_result.node);
         }
 
-        let Some(element) = hit_test_result
-            .node
-            .inclusive_ancestors(ShadowIncluding::Yes)
-            .find_map(DomRoot::downcast::<Element>)
-        else {
+        // While the pointer is locked, mouse events go to the lock element wherever the cursor is.
+        let Some(element) = document.connected_pointer_lock_element().or_else(|| {
+            hit_test_result
+                .node
+                .inclusive_ancestors(ShadowIncluding::Yes)
+                .find_map(DomRoot::downcast::<Element>)
+        }) else {
             return;
         };
 
@@ -1598,6 +1657,17 @@ impl DocumentEventHandler {
         cx: &mut JSContext,
         keyboard_event: EmbedderKeyboardEvent,
     ) -> InputEventResult {
+        // Escape releases the pointer lock and does not reach the page, as in other engines.
+        if keyboard_event.event.state == KeyState::Down &&
+            keyboard_event.event.key == Key::Named(NamedKey::Escape)
+        {
+            let document = self.window.Document();
+            if document.pointer_lock_element().is_some() {
+                document.exit_pointer_lock();
+                return InputEventResult::Consumed;
+            }
+        }
+
         let target = &self.target_for_events_following_focus();
         let keyevent = KeyboardEvent::new_with_platform_keyboard_event(
             cx,

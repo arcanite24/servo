@@ -945,6 +945,10 @@ pub trait WebViewDelegate {
     /// The [`Cursor`] of the currently loaded page in this [`WebView`] has changed. The new
     /// cursor can accessed via [`WebView::cursor`].
     fn notify_cursor_changed(&self, _webview: WebView, _cursor: Cursor) {}
+    /// The page in this [`WebView`] locked (`true`) or released (`false`) the pointer with the
+    /// Pointer Lock API. While it is locked, hide and hold the cursor, and send raw mouse motion
+    /// with [`MouseMoveEvent::new_with_movement`](crate::MouseMoveEvent::new_with_movement).
+    fn notify_pointer_lock_changed(&self, _webview: WebView, _locked: bool) {}
     /// The favicon of the currently loaded page in this [`WebView`] has changed. The new
     /// favicon [`Image`](embedder_traits::Image) can accessed via [`WebView::favicon`].
     fn notify_favicon_changed(&self, _webview: WebView) {}

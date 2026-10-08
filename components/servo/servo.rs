@@ -580,6 +580,13 @@ impl ServoInner {
                     webview.set_cursor(cursor);
                 }
             },
+            EmbedderMsg::SetPointerLock(webview_id, locked) => {
+                if let Some(webview) = self.get_webview_handle(webview_id) {
+                    webview
+                        .delegate()
+                        .notify_pointer_lock_changed(webview, locked);
+                }
+            },
             EmbedderMsg::NewFavicon(webview_id, image) => {
                 if let Some(webview) = self.get_webview_handle(webview_id) {
                     webview.set_favicon(image);

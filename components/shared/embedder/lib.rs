@@ -495,6 +495,10 @@ pub enum EmbedderMsg {
     SetClipboardText(WebViewId, String),
     /// Changes the cursor.
     SetCursor(WebViewId, Cursor),
+    /// The page locked (`true`) or released (`false`) the pointer with the Pointer Lock API. While
+    /// locked, the embedder should hide and hold the cursor and report raw motion with
+    /// [`MouseMoveEvent::new_with_movement`].
+    SetPointerLock(WebViewId, bool),
     /// A favicon was detected
     NewFavicon(WebViewId, Image),
     /// Get the device independent window rectangle.

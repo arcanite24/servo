@@ -402,6 +402,8 @@ pub(crate) trait PlatformWindow {
     fn set_position(&self, _point: DeviceIntPoint) {}
     fn set_fullscreen(&self, _state: bool) {}
     fn set_cursor(&self, _cursor: Cursor) {}
+    /// The page locked or released the pointer (the Pointer Lock API).
+    fn set_pointer_lock(&self, _locked: bool) {}
     #[cfg(all(
         feature = "webxr",
         not(any(target_os = "android", target_env = "ohos"))
