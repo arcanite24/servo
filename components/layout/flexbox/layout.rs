@@ -586,11 +586,12 @@ impl FlexContainer {
             // > base size if the item is not shrinkable, and then further clamped by the item’s
             // > min and max main sizes.
             if self.config.flex_wrap == FlexWrap::Nowrap {
-                container_min_content_size += (*outer_flex_base_size +
-                    Au::from_f32_px(
-                        min_flex_factors.flex_grow_or_shrink_factor * chosen_min_flex_fraction,
-                    ))
-                .clamp_between_extremums(*outer_min_main_size, *outer_max_main_size);
+                // The spec's single-line algorithm above makes a row of shrinkable items as wide at min-content
+                // as at max-content (their flex base sizes), so a centered `display: flex` item in a column
+                // container never wraps its text and overflows. Browsers (Blink, Gecko) sum the items'
+                // min-content contributions instead; do the same, with the same capping as multi-line containers.
+                let _ = (min_flex_factors, chosen_min_flex_fraction);
+                container_min_content_size += *min_content_main_size_for_multiline_container;
             } else {
                 container_min_content_size
                     .max_assign(*min_content_main_size_for_multiline_container);
