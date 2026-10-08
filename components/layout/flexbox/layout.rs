@@ -228,9 +228,24 @@ impl FlexLineItem<'_> {
                 item_margin.cross_start
         };
 
-        let baselines = self
+        let mut baselines = self
             .layout_result
             .content_baselines_for_parent_relative_to_margin_box;
+        // <https://drafts.csswg.org/css-flexbox/#flex-baselines>: without items in baseline
+        // alignment, the container's first (last) baseline is that of the startmost (endmost)
+        // item, "synthesized from its border edges" if it has none. Skipping such an item took
+        // the next item's text baseline instead: an inline-flex badge led by an <svg> icon sat
+        // a strut's descent higher on its line than in other engines.
+        if flex_context.config.flex_axis == FlexAxis::Row {
+            let synthesized = || {
+                self.item.synthesized_baseline_relative_to_margin_box(
+                    item_used_size.cross,
+                    &flex_context.config,
+                )
+            };
+            baselines.first = baselines.first.or_else(|| Some(synthesized()));
+            baselines.last = baselines.last.or_else(|| Some(synthesized()));
+        }
         if flex_context.config.flex_direction_is_reversed {
             if let Some(last_baseline) = baselines.last {
                 all_baselines
