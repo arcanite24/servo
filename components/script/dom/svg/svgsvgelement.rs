@@ -113,15 +113,34 @@ impl SVGSVGElement {
         };
     }
 
-    /// The serialized subtree is rendered as a standalone image, where the page's CSS custom properties do not
-    /// exist, so `fill="var(--ink)"` drew black. Substitute every `var(--name[, fallback])` in the paint attributes
-    /// and `style` of the clone with the property's computed value on the matching original element.
+    /// The serialized subtree is rendered as a standalone image, where the page's style sheets and CSS custom
+    /// properties do not exist: `fill="var(--ink)"` drew black, and paint set by class rules
+    /// (`.lane circle { fill: … }`, stroked links) was lost. Write each element's computed paint and text
+    /// properties into the clone's `style`, which the image's renderer reads.
     fn resolve_custom_properties(&self, cx: &mut JSContext, cloned_root: &Node) {
-        let attributes: [LocalName; 4] = [
-            local_name!("fill"),
-            local_name!("stroke"),
-            local_name!("stop-color"),
-            local_name!("style"),
+        const PROPERTIES: [&str; 22] = [
+            "fill",
+            "fill-opacity",
+            "fill-rule",
+            "stroke",
+            "stroke-width",
+            "stroke-opacity",
+            "stroke-linecap",
+            "stroke-linejoin",
+            "stroke-miterlimit",
+            "stroke-dasharray",
+            "stroke-dashoffset",
+            "opacity",
+            "stop-color",
+            "stop-opacity",
+            "visibility",
+            "color",
+            "paint-order",
+            "font-family",
+            "font-size",
+            "font-weight",
+            "text-anchor",
+            "dominant-baseline",
         ];
         let window = self.owner_window();
         let originals: Vec<DomRoot<Element>> = self
@@ -134,23 +153,44 @@ impl SVGSVGElement {
             .filter_map(DomRoot::downcast::<Element>)
             .collect();
         for (original, clone) in originals.iter().zip(clones.iter()) {
-            let mut style = None;
-            for name in attributes.iter() {
-                let value = original.get_string_attribute(name);
-                if !value.str().contains("var(") {
+            if *original.namespace() != ns!(svg) {
+                continue;
+            }
+            let computed = window.GetComputedStyle(cx, original, None);
+            let mut declarations = String::new();
+            for property in PROPERTIES {
+                let value = computed.GetPropertyValue(DOMString::from(property));
+                let value = value.str();
+                let value = value.trim();
+                if value.is_empty() || value.contains("var(") {
                     continue;
                 }
-                let computed =
-                    style.get_or_insert_with(|| window.GetComputedStyle(cx, original, None));
-                let resolved = substitute_custom_properties(&value.str(), &|property: &str| {
-                    computed
-                        .GetPropertyValue(DOMString::from(property))
-                        .str()
-                        .trim()
-                        .to_owned()
-                });
-                clone.set_string_attribute(cx, name, DOMString::from(resolved));
+                declarations.push_str(property);
+                declarations.push(':');
+                declarations.push_str(value);
+                declarations.push(';');
             }
+            // Not `display`: Servo does not lay out SVG content, and computes `display: none` for a <g>.
+            // Attributes still name custom properties the image cannot resolve; the style above wins over
+            // presentation attributes, so only `var()` left in other attributes needs substituting.
+            for name in [
+                local_name!("fill"),
+                local_name!("stroke"),
+                local_name!("stop-color"),
+            ] {
+                let value = original.get_string_attribute(&name);
+                if value.str().contains("var(") {
+                    let resolved = substitute_custom_properties(&value.str(), &|property: &str| {
+                        computed
+                            .GetPropertyValue(DOMString::from(property))
+                            .str()
+                            .trim()
+                            .to_owned()
+                    });
+                    clone.set_string_attribute(cx, &name, DOMString::from(resolved));
+                }
+            }
+            clone.set_string_attribute(cx, &local_name!("style"), DOMString::from(declarations));
         }
     }
 
