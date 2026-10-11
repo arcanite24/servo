@@ -22,6 +22,31 @@ fn git_sha() -> Result<String, String> {
     }
 }
 
+/// Asks Cargo to run this script again when the checked-out commit changes, so that `GIT_SHA` (and the version
+/// string built from it) names the commit that was actually built. Once a build script prints any
+/// `rerun-if-changed`, Cargo runs it again only when a listed file changes.
+fn watch_git_head() {
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    };
+    let mut watched = vec![git(&["rev-parse", "--git-path", "HEAD"])];
+    if let Some(branch) = git(&["symbolic-ref", "-q", "HEAD"]) {
+        watched.push(git(&["rev-parse", "--git-path", &branch]));
+    }
+    watched.push(git(&["rev-parse", "--git-path", "packed-refs"]));
+    // A path that does not exist would make Cargo run this script on every build.
+    for path in watched.into_iter().flatten() {
+        if Path::new(&path).exists() {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo::rustc-check-cfg=cfg(servo_production)");
     println!("cargo::rustc-check-cfg=cfg(servo_do_not_use_in_production)");
@@ -52,6 +77,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         #[cfg(windows)]
         {
             let mut res = winresource::WindowsResource::new();
+            println!("cargo:rerun-if-changed=../../resources/servo.ico");
+            println!("cargo:rerun-if-changed=platform/windows/servoshell.exe.manifest");
             res.set_icon("../../resources/servo.ico");
             res.set_manifest_file("platform/windows/servoshell.exe.manifest");
             res.compile().unwrap();
@@ -75,6 +102,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("cargo:rustc-link-search=native={}", out.display());
     }
 
+    println!("cargo:rerun-if-changed=build.rs");
+    watch_git_head();
     match git_sha() {
         Ok(hash) => println!("cargo:rustc-env=GIT_SHA={}", hash),
         Err(error) => {
