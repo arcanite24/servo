@@ -49,7 +49,18 @@ pub struct Embedding {
     pub user_scripts: Vec<String>,
     /// Requests from the application's own threads (see [`command_channel`]).
     pub commands: Option<CommandReceiver>,
+    /// Called when a page's script thread or content process crashes, with the reason and any
+    /// backtrace, so the application can log it and recover. A panicked script thread may leave the
+    /// process's memory unsound (a heap block written after it was freed, seen on Windows), so a
+    /// careful application starts over in a new process.
+    pub on_crash: Option<CrashHook>,
 }
+
+/// See [`Embedding::on_crash`].
+pub type CrashHook = Box<dyn Fn(&str, Option<&str>) + Send + Sync>;
+
+#[cfg(not(any(target_os = "android", target_env = "ohos")))]
+pub(crate) static CRASH_HOOK: std::sync::OnceLock<CrashHook> = std::sync::OnceLock::new();
 
 /// A request an embedding application makes of servoshell from any thread.
 pub enum Command {

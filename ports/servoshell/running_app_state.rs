@@ -886,6 +886,10 @@ impl WebViewDelegate for RunningAppState {
     }
 
     fn notify_crashed(&self, webview: WebView, reason: String, backtrace: Option<String>) {
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+        if let Some(hook) = crate::CRASH_HOOK.get() {
+            hook(&reason, backtrace.as_deref());
+        }
         self.platform_window_for_webview(&webview)
             .notify_crashed(webview, reason, backtrace);
     }

@@ -110,6 +110,9 @@ impl App {
                 let _ = commands.waker.set(self.waker.clone());
                 self.commands = Some(commands);
             }
+            if let Some(hook) = embedding.on_crash {
+                let _ = crate::CRASH_HOOK.set(hook);
+            }
         }
 
         let servo_builder = ServoBuilder::default()
