@@ -47,6 +47,53 @@ pub fn main() {
 pub struct Embedding {
     pub protocols: servo::protocol_handler::ProtocolRegistry,
     pub user_scripts: Vec<String>,
+    /// Requests from the application's own threads (see [`command_channel`]).
+    pub commands: Option<CommandReceiver>,
+}
+
+/// A request an embedding application makes of servoshell from any thread.
+pub enum Command {
+    /// Capture the focused window's page as servoshell's `--output` does, then call back with its
+    /// width, height and RGBA pixels, or why it failed.
+    Screenshot(Box<dyn FnOnce(Result<(u32, u32, Vec<u8>), String>) + Send>),
+}
+
+/// Sends [`Command`]s and wakes servoshell's event loop to handle them.
+#[derive(Clone)]
+pub struct CommandSender {
+    sender: std::sync::mpsc::Sender<Command>,
+    waker: std::sync::Arc<std::sync::OnceLock<Box<dyn servo::EventLoopWaker>>>,
+}
+
+impl CommandSender {
+    /// Returns false once servoshell has shut down.
+    pub fn send(&self, command: Command) -> bool {
+        let sent = self.sender.send(command).is_ok();
+        if let Some(waker) = self.waker.get() {
+            waker.wake();
+        }
+        sent
+    }
+}
+
+/// servoshell's end of [`command_channel`], given to it in [`Embedding::commands`].
+pub struct CommandReceiver {
+    pub(crate) receiver: std::sync::mpsc::Receiver<Command>,
+    pub(crate) waker: std::sync::Arc<std::sync::OnceLock<Box<dyn servo::EventLoopWaker>>>,
+}
+
+/// A channel for an embedding application's [`Command`]s. Commands sent before servoshell starts
+/// wait until its first window is open.
+pub fn command_channel() -> (CommandSender, CommandReceiver) {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let waker = std::sync::Arc::new(std::sync::OnceLock::new());
+    (
+        CommandSender {
+            sender,
+            waker: waker.clone(),
+        },
+        CommandReceiver { receiver, waker },
+    )
 }
 
 /// Run servoshell for an embedding application, with `args` in place of the command line's

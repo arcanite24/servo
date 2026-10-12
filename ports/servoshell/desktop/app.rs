@@ -50,6 +50,8 @@ pub struct App {
     state: AppState,
     /// An embedding application's schemes and scripts, until `init` hands them to Servo.
     embedding: Option<crate::Embedding>,
+    /// An embedding application's requests, handled each time the event loop is pumped.
+    commands: Option<crate::CommandReceiver>,
 }
 
 impl App {
@@ -78,6 +80,7 @@ impl App {
             t,
             state: AppState::Initializing,
             embedding: None,
+            commands: None,
         }
     }
 
@@ -103,6 +106,10 @@ impl App {
         if let Some(embedding) = embedding {
             protocol_registry.merge(embedding.protocols);
             embedded_scripts = embedding.user_scripts;
+            if let Some(commands) = embedding.commands {
+                let _ = commands.waker.set(self.waker.clone());
+                self.commands = Some(commands);
+            }
         }
 
         let servo_builder = ServoBuilder::default()
@@ -186,12 +193,38 @@ impl App {
             return false;
         };
 
+        if let Some(commands) = &self.commands {
+            while let Ok(command) = commands.receiver.try_recv() {
+                handle_command(state, command);
+            }
+        }
+
         let create_platform_window = |url: Url| self.create_platform_window(url, active_event_loop);
         if !state.spin_event_loop(Some(&create_platform_window)) {
             self.state = AppState::ShuttingDown;
             return false;
         }
         true
+    }
+}
+
+fn handle_command(state: &RunningAppState, command: crate::Command) {
+    match command {
+        crate::Command::Screenshot(callback) => {
+            let webview = state
+                .focused_window()
+                .or_else(|| state.windows().values().next().cloned())
+                .and_then(|window| window.active_webview());
+            let Some(webview) = webview else {
+                return callback(Err("no page to capture".to_owned()));
+            };
+            webview.take_screenshot(None, move |image| {
+                callback(match image {
+                    Ok(image) => Ok((image.width(), image.height(), image.into_raw())),
+                    Err(error) => Err(format!("{error:?}")),
+                })
+            });
+        },
     }
 }
 
