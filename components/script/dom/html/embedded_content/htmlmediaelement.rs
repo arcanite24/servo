@@ -522,6 +522,9 @@ pub(crate) struct HTMLMediaElement {
     network_state: Cell<NetworkState>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-readystate>
     ready_state: Cell<ReadyState>,
+    /// Whether the media engine last reported itself paused or playing (prerolled), which moves HAVE_METADATA on
+    /// to HAVE_ENOUGH_DATA. GStreamer can report it before the metadata, while it is still buffering.
+    engine_ready: Cell<bool>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-srcobject>
     src_object: DomRefCell<Option<SrcObject>>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-currentsrc>
@@ -655,6 +658,7 @@ impl HTMLMediaElement {
             htmlelement: HTMLElement::new_inherited(tag_name, prefix, document),
             network_state: Cell::new(NetworkState::Empty),
             ready_state: Cell::new(ReadyState::HaveNothing),
+            engine_ready: Cell::new(false),
             src_object: Default::default(),
             current_src: DomRefCell::new("".to_owned()),
             generation_id: Cell::new(0),
@@ -2208,6 +2212,7 @@ impl HTMLMediaElement {
         };
 
         *self.player.borrow_mut() = Some(player);
+        self.engine_ready.set(false);
 
         let task_source = self
             .owner_global()
@@ -2641,6 +2646,13 @@ impl HTMLMediaElement {
                 .clone()
                 .unwrap_or(window.get_url().into_string()),
         );
+
+        // The engine may have reported itself paused before this metadata arrived (GStreamer's player does when
+        // buffering finishes before the preroll), and it reports no change after it; without this, readyState stays
+        // at HAVE_METADATA and play() never resolves.
+        if self.engine_ready.get() && self.ready_state.get() == ReadyState::HaveMetadata {
+            self.change_ready_state(ReadyState::HaveEnoughData);
+        }
     }
 
     fn playback_duration_changed(&self, duration: Option<Duration>) {
@@ -2795,6 +2807,8 @@ impl HTMLMediaElement {
 
     fn playback_state_changed(&self, cx: &mut JSContext, state: &PlaybackState) {
         let mut media_session_playback_state = MediaSessionPlaybackState::None_;
+        self.engine_ready
+            .set(matches!(*state, PlaybackState::Paused | PlaybackState::Playing));
         match *state {
             PlaybackState::Paused => {
                 media_session_playback_state = MediaSessionPlaybackState::Paused;
