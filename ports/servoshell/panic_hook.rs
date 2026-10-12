@@ -41,6 +41,22 @@ pub(crate) fn panic_hook(info: &PanicHookInfo) {
     }
     drop(stderr);
 
+    // An application that recovers from crashes hears of a page's script thread panicking here,
+    // before the unwind: on Windows the unwind can leave a heap block written after it was freed,
+    // and the process may fault before the constellation's crash notice reaches the embedder.
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+    if name.starts_with("Script#") && !should_panic_hook_suppress_termination() {
+        if let Some(hook) = crate::CRASH_HOOK.get() {
+            let reason = match info.location() {
+                Some(location) => format!("{msg} (thread {name}, at {}:{})", location.file(), location.line()),
+                None => format!("{msg} (thread {name})"),
+            };
+            let mut backtrace = Vec::new();
+            let _ = crate::backtrace::print(&mut backtrace);
+            hook(&reason, Some(String::from_utf8_lossy(&backtrace).as_ref()));
+        }
+    }
+
     // TODO: This shouldn't be using internal Servo options here. Perhaps this functionality should
     // move into libservo itself.
     if !should_panic_hook_suppress_termination() {

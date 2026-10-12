@@ -50,9 +50,11 @@ pub struct Embedding {
     /// Requests from the application's own threads (see [`command_channel`]).
     pub commands: Option<CommandReceiver>,
     /// Called when a page's script thread or content process crashes, with the reason and any
-    /// backtrace, so the application can log it and recover. A panicked script thread may leave the
-    /// process's memory unsound (a heap block written after it was freed, seen on Windows), so a
-    /// careful application starts over in a new process.
+    /// backtrace, so the application can log it and recover. A script thread's panic calls it from
+    /// the panic hook, on the panicking thread and before the unwind, which may leave the process's
+    /// memory unsound (a heap block written after it was freed, seen on Windows): a careful
+    /// application starts over in a new process and does not return. The constellation's crash
+    /// notice calls it again if it does.
     pub on_crash: Option<CrashHook>,
 }
 
