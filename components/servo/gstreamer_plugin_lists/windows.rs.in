@@ -1,6 +1,7 @@
 // The format of this file is intended to be directly `include!()` able as a [&'static str] in Rust,
 // and a valid python list[str] after stripping the `//` comments at the beginning of lines (from gstreamer.py).
 [
-// gst-plugins-bad
-"gstwasapi"
+// gst-plugins-bad. wasapi2 (Windows 10 and later), not the legacy wasapi plugin: wasapisink fails its writes in
+// shared mode ("error writing data in gst_wasapi_sink_write"), so <audio> never started playing.
+"gstwasapi2"
 ]

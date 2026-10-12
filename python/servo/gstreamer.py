@@ -59,6 +59,7 @@ GSTREAMER_WIN_DEPENDENCY_LIBS = [
     "gmodule-2.0-0.dll",
     "gobject-2.0-0.dll",
     "graphene-1.0-0.dll",
+    "gstwinrt-1.0-0.dll",  # the wasapi2 plugin's
     "intl-8.dll",
     "libcrypto-1_1-x64.dll",
     "libjpeg-8.dll",
