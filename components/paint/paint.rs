@@ -276,8 +276,9 @@ impl Paint {
         let connection = rendering_context
             .connection()
             .expect("Failed to get connection");
-        let adapter = connection
-            .create_adapter()
+        let adapter = rendering_context
+            .webgl_adapter()
+            .map_or_else(|| connection.create_adapter(), Ok)
             .expect("Failed to create adapter");
 
         let painter_surfman_details = PainterSurfmanDetails {

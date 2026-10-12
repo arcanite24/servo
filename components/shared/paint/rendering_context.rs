@@ -80,6 +80,11 @@ pub trait RenderingContext {
     fn connection(&self) -> Option<Connection> {
         None
     }
+    /// The adapter WebGL must use when this context can only import surfaces made on its own adapter. Default to
+    /// `None`: WebGL uses the connection's default adapter.
+    fn webgl_adapter(&self) -> Option<Adapter> {
+        None
+    }
     /// Return the [`RefreshDriver`] for this [`RenderingContext`]. If `None` is returned,
     /// then the default timer-based [`RefreshDriver`] will be used.
     fn refresh_driver(&self) -> Option<Rc<dyn RefreshDriver>> {
@@ -393,6 +398,13 @@ impl RenderingContext for SoftwareRenderingContext {
 
     fn connection(&self) -> Option<Connection> {
         self.surfman_rendering_info.connection()
+    }
+
+    /// On Windows the software adapter is ANGLE's WARP device, and a surface shared from another D3D11 device (the
+    /// hardware adapter WebGL would otherwise use) fails to import (`SurfaceImportFailed(BadAttribute)`), which
+    /// panicked every headless page with WebGL. Elsewhere surfaces cross adapters, and WebGL keeps the GPU.
+    fn webgl_adapter(&self) -> Option<Adapter> {
+        cfg!(target_os = "windows").then(|| self.surfman_rendering_info.device.borrow().adapter())
     }
 }
 
