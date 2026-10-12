@@ -15,7 +15,8 @@ pub(crate) struct UrlHelper;
 #[expect(non_snake_case)]
 impl UrlHelper {
     pub(crate) fn Origin(url: &ServoUrl) -> USVString {
-        USVString(quirks::origin(url.as_url()))
+        // Servo's origin rather than the URL crate's, so an embedder's standard scheme reports its tuple origin.
+        USVString(url.origin().ascii_serialization().into_owned())
     }
     pub(crate) fn Href(url: &ServoUrl) -> USVString {
         USVString(quirks::href(url.as_url()).to_owned())

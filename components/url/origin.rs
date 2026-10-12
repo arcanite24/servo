@@ -85,6 +85,14 @@ impl ImmutableOrigin {
             return Self::new_opaque_for_file();
         }
 
+        // A blob URL's origin is its inner URL's, which may be under an embedder's standard scheme.
+        if url.scheme() == "blob" &&
+            let Ok(inner) = Url::parse(url.path()) &&
+            is_standard_secure_scheme(inner.scheme())
+        {
+            return Self::new(&inner);
+        }
+
         if let Some(host) = url.host() &&
             is_standard_secure_scheme(url.scheme())
         {
@@ -246,6 +254,10 @@ impl ImmutableOrigin {
     pub fn ascii_serialization(&self) -> Cow<'_, str> {
         match self {
             ImmutableOrigin::Opaque(_) => Cow::Borrowed("null"),
+            // An embedder's standard scheme has no default port; its origin is `scheme://host`.
+            ImmutableOrigin::Tuple(scheme, host, 0) if is_standard_secure_scheme(scheme) => {
+                Cow::Owned(format!("{scheme}://{host}"))
+            },
             ImmutableOrigin::Tuple(..) => {
                 Cow::Owned(self.clone().into_url_origin().ascii_serialization())
             },
