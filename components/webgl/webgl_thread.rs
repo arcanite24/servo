@@ -650,14 +650,22 @@ impl WebGLThread {
             device.context_id(&ctx),
         );
 
+        // glow reads query results through glGetQueryObject*EXT unless GL 4.5's glGetQueryBufferObjectiv is loaded, so
+        // on desktop GL 3.3 to 4.4 (macOS's 4.1) every WebGL 2 query panicked this thread. The core functions take the
+        // same arguments: hand them over under the EXT names when those are missing.
+        let load = |symbol_name: &str| {
+            let address = device.get_proc_address(&ctx, symbol_name);
+            match symbol_name.strip_suffix("EXT") {
+                Some(core) if address.is_null() && core.starts_with("glGetQueryObject") => {
+                    device.get_proc_address(&ctx, core)
+                },
+                _ => address,
+            }
+        };
         let gl = unsafe {
             Rc::new(match api_type {
-                GlType::Gl => glow::Context::from_loader_function(|symbol_name| {
-                    device.get_proc_address(&ctx, symbol_name)
-                }),
-                GlType::Gles => glow::Context::from_loader_function(|symbol_name| {
-                    device.get_proc_address(&ctx, symbol_name)
-                }),
+                GlType::Gl => glow::Context::from_loader_function(load),
+                GlType::Gles => glow::Context::from_loader_function(load),
             })
         };
 
