@@ -96,6 +96,9 @@ pub(crate) struct CommonTexImage2DValidator<'a> {
     width: i32,
     height: i32,
     border: i32,
+    /// Whether this validates a sub-image upload, whose format names the pixels being uploaded rather than the
+    /// internal format of a new image.
+    sub_image: bool,
 }
 
 pub(crate) struct CommonTexImage2DValidatorResult {
@@ -147,11 +150,14 @@ impl WebGLValidator for CommonTexImage2DValidator<'_> {
         };
 
         // GL_INVALID_ENUM is generated if internal_format is not an accepted
-        // format.
+        // format. A sub-image upload passes its unsized format here; formats such
+        // as RG and RED are valid there even though they cannot be the internal
+        // format of a new image, and the upload is checked against the existing
+        // image's internal format later.
         let internal_format = match TexFormat::from_gl_constant(self.internal_format) {
             Some(format)
                 if format.required_webgl_version() <= self.context.webgl_version() &&
-                    format.usable_as_internal() =>
+                    (self.sub_image || format.usable_as_internal()) =>
             {
                 format
             },
@@ -248,6 +254,7 @@ impl<'a> CommonTexImage2DValidator<'a> {
             width,
             height,
             border,
+            sub_image: false,
         }
     }
 }
@@ -285,6 +292,25 @@ impl<'a> TexImage2DValidator<'a> {
             format,
             data_type,
         }
+    }
+
+    /// A validator for TexSubImage2D, where `format` describes the uploaded
+    /// pixels and the image being updated already has an internal format.
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) fn for_sub_image(
+        context: &'a WebGLRenderingContext,
+        target: u32,
+        level: i32,
+        width: i32,
+        height: i32,
+        format: u32,
+        data_type: u32,
+    ) -> Self {
+        let mut validator = Self::new(
+            context, target, level, format, width, height, 0, format, data_type,
+        );
+        validator.common_validator.sub_image = true;
+        validator
     }
 }
 
