@@ -2480,6 +2480,9 @@ impl WebGLImpl {
             WebGLCommand::EndQuery(target) => {
                 unsafe { gl.end_query(target) };
             },
+            WebGLCommand::QueryCounter(query_id, target) => {
+                unsafe { gl.query_counter(query_id.glow(), target) };
+            },
             WebGLCommand::DeleteQuery(query_id) => {
                 unsafe { gl.delete_query(query_id.glow()) };
             },

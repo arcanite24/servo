@@ -624,6 +624,7 @@ pub enum WebGLCommand {
     BeginQuery(u32, WebGLQueryId),
     DeleteQuery(WebGLQueryId),
     EndQuery(u32),
+    QueryCounter(WebGLQueryId, u32),
     GenerateQuery(GenericSender<WebGLQueryId>),
     GetQueryState(GenericSender<u32>, WebGLQueryId, u32),
     GenerateSampler(GenericSender<WebGLSamplerId>),

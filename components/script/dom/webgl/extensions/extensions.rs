@@ -420,6 +420,7 @@ impl WebGLExtensions {
         self.register::<ext::extblendminmax::EXTBlendMinmax>();
         self.register::<ext::extcolorbufferfloat::EXTColorBufferFloat>();
         self.register::<ext::extcolorbufferhalffloat::EXTColorBufferHalfFloat>();
+        self.register::<ext::extdisjointtimerquerywebgl2::EXTDisjointTimerQueryWebGL2>();
         self.register::<ext::extfragdepth::EXTFragDepth>();
         self.register::<ext::extshadertexturelod::EXTShaderTextureLod>();
         self.register::<ext::exttexturefilteranisotropic::EXTTextureFilterAnisotropic>();

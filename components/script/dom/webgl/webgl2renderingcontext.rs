@@ -31,6 +31,7 @@ use webrender_api::ImageKey;
 
 use super::validations::types::TexImageTarget;
 use crate::canvas_context::CanvasContext;
+use crate::dom::bindings::codegen::Bindings::EXTDisjointTimerQueryWebGL2Binding::EXTDisjointTimerQueryWebGL2Constants as timer;
 use crate::dom::bindings::codegen::Bindings::WebGL2RenderingContextBinding::{
     WebGL2RenderingContextConstants as constants, WebGL2RenderingContextMethods,
 };
@@ -100,6 +101,8 @@ pub(crate) struct WebGL2RenderingContext {
     base: Dom<WebGLRenderingContext>,
     occlusion_query: MutNullableDom<WebGLQuery>,
     primitives_query: MutNullableDom<WebGLQuery>,
+    /// The active `TIME_ELAPSED_EXT` query (EXT_disjoint_timer_query_webgl2).
+    timer_query: MutNullableDom<WebGLQuery>,
     samplers: Box<[MutNullableDom<WebGLSampler>]>,
     bound_copy_read_buffer: MutNullableDom<WebGLBuffer>,
     bound_copy_write_buffer: MutNullableDom<WebGLBuffer>,
@@ -159,6 +162,7 @@ impl WebGL2RenderingContext {
             base: Dom::from_ref(&*base),
             occlusion_query: MutNullableDom::new(None),
             primitives_query: MutNullableDom::new(None),
+            timer_query: MutNullableDom::new(None),
             samplers,
             bound_copy_read_buffer: MutNullableDom::new(None),
             bound_copy_write_buffer: MutNullableDom::new(None),
@@ -214,6 +218,15 @@ impl WebGL2RenderingContext {
 /// List of domains for which WebGL 2 is enabled automatically, regardless
 /// of the status of the dom.webgl2.enabled preference.
 static WEBGL2_ORIGINS: &[&str] = &["www.servoexperiments.com"];
+
+impl WebGL2RenderingContext {
+    /// Whether the page enabled EXT_disjoint_timer_query_webgl2, which makes the timer query targets valid.
+    fn timer_queries(&self) -> bool {
+        self.base
+            .extension_manager()
+            .is_enabled::<crate::dom::webgl::extensions::extdisjointtimerquerywebgl2::EXTDisjointTimerQueryWebGL2>()
+    }
+}
 
 impl WebGL2RenderingContext {
     pub(crate) fn current_vao(&self, cx: &mut JSContext) -> DomRoot<WebGLVertexArrayObject> {
@@ -1069,6 +1082,11 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
     /// <https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.3>
     fn GetParameter(&self, cx: &mut JSContext, parameter: u32, mut rval: MutableHandleValue) {
         match parameter {
+            // Desktop OpenGL has no disjoint events: timer results are never invalidated.
+            timer::GPU_DISJOINT_EXT if self.timer_queries() => {
+                rval.set(BooleanValue(false));
+                return;
+            },
             constants::VERSION => {
                 "WebGL 2.0".to_jsval(cx, rval);
                 return;
@@ -4056,6 +4074,12 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
                         &self.occlusion_query
                     },
                     constants::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN => &self.primitives_query,
+                    timer::TIME_ELAPSED_EXT => &self.timer_query,
+                    // A timestamp (queryCounterEXT) is never active.
+                    timer::TIMESTAMP_EXT => {
+                        query.delete(Operation::Infallible);
+                        return;
+                    },
                     _ => unreachable!(),
                 };
                 if let Some(stored_query) = slot.get() &&
@@ -4112,6 +4136,7 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
                 &self.occlusion_query
             },
             constants::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN => &self.primitives_query,
+            timer::TIME_ELAPSED_EXT if self.timer_queries() => &self.timer_query,
             _ => {
                 self.base.webgl_error(InvalidEnum);
                 return;
@@ -4135,6 +4160,7 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
                 self.occlusion_query.take()
             },
             constants::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN => self.primitives_query.take(),
+            timer::TIME_ELAPSED_EXT if self.timer_queries() => self.timer_query.take(),
             _ => {
                 self.base.webgl_error(InvalidEnum);
                 return;
@@ -4162,6 +4188,7 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
                 self.occlusion_query.get()
             },
             constants::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN => self.primitives_query.get(),
+            timer::TIME_ELAPSED_EXT if self.timer_queries() => self.timer_query.get(),
             _ => {
                 self.base.webgl_error(InvalidEnum);
                 None

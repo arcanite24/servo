@@ -9,6 +9,7 @@ pub(crate) mod angleinstancedarrays;
 pub(crate) mod extblendminmax;
 pub(crate) mod extcolorbufferfloat;
 pub(crate) mod extcolorbufferhalffloat;
+pub(crate) mod extdisjointtimerquerywebgl2;
 pub(crate) mod extfragdepth;
 pub(crate) mod extshadertexturelod;
 pub(crate) mod exttexturefilteranisotropic;

@@ -11,6 +11,7 @@ use script_bindings::weakref::WeakRef;
 use servo_canvas_traits::webgl::WebGLError::*;
 use servo_canvas_traits::webgl::{WebGLCommand, WebGLQueryId, webgl_channel};
 
+use crate::dom::bindings::codegen::Bindings::EXTDisjointTimerQueryWebGL2Binding::EXTDisjointTimerQueryWebGL2Constants as timer;
 use crate::dom::bindings::codegen::Bindings::WebGL2RenderingContextBinding::WebGL2RenderingContextConstants as constants;
 use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::DomGlobal;
@@ -106,10 +107,13 @@ impl WebGLQuery {
         match target {
             constants::ANY_SAMPLES_PASSED |
             constants::ANY_SAMPLES_PASSED_CONSERVATIVE |
-            constants::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN => (),
+            constants::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN |
+            timer::TIME_ELAPSED_EXT => (),
             _ => return Err(InvalidEnum),
         }
         self.gl_target.set(Some(target));
+        // A query used again answers for its new run, not the last one.
+        self.query_result_available.set(None);
 
         context.send_command(WebGLCommand::BeginQuery(target, self.droppable.gl_id));
         Ok(())
@@ -131,10 +135,34 @@ impl WebGLQuery {
         match target {
             constants::ANY_SAMPLES_PASSED |
             constants::ANY_SAMPLES_PASSED_CONSERVATIVE |
-            constants::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN => (),
+            constants::TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN |
+            timer::TIME_ELAPSED_EXT => (),
             _ => return Err(InvalidEnum),
         }
         context.send_command(WebGLCommand::EndQuery(target));
+        Ok(())
+    }
+
+    /// `queryCounterEXT`: record the GPU's time when the commands before it have completed.
+    pub(crate) fn counter(
+        &self,
+        context: &WebGLRenderingContext,
+        target: u32,
+    ) -> Result<(), servo_canvas_traits::webgl::WebGLError> {
+        if self.droppable.marked_for_deletion.get() {
+            return Err(InvalidOperation);
+        }
+        if target != timer::TIMESTAMP_EXT {
+            return Err(InvalidEnum);
+        }
+        if let Some(current_target) = self.gl_target.get() &&
+            current_target != target
+        {
+            return Err(InvalidOperation);
+        }
+        self.gl_target.set(Some(target));
+        self.query_result_available.set(None);
+        context.send_command(WebGLCommand::QueryCounter(self.droppable.gl_id, target));
         Ok(())
     }
 
