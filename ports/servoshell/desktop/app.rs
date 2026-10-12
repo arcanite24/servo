@@ -48,6 +48,8 @@ pub struct App {
     t_start: Instant,
     t: Instant,
     state: AppState,
+    /// An embedding application's schemes and scripts, until `init` hands them to Servo.
+    embedding: Option<crate::Embedding>,
 }
 
 impl App {
@@ -75,7 +77,12 @@ impl App {
             t_start: t,
             t,
             state: AppState::Initializing,
+            embedding: None,
         }
+    }
+
+    pub fn set_embedding(&mut self, embedding: Option<crate::Embedding>) {
+        self.embedding = embedding;
     }
 
     /// Initialize Application once event loop start running.
@@ -91,6 +98,12 @@ impl App {
             "resource",
             protocols::resource::ResourceProtocolHandler::default(),
         );
+        let embedding = self.embedding.take();
+        let mut embedded_scripts = Vec::new();
+        if let Some(embedding) = embedding {
+            protocol_registry.merge(embedding.protocols);
+            embedded_scripts = embedding.user_scripts;
+        }
 
         let servo_builder = ServoBuilder::default()
             .opts(self.opts.clone())
@@ -113,6 +126,9 @@ impl App {
         servo.setup_logging();
 
         let user_content_manager = Rc::new(UserContentManager::new(&servo));
+        for script in embedded_scripts {
+            user_content_manager.add_script(Rc::new(UserScript::new(script, None)));
+        }
         for script in load_userscripts(self.servoshell_preferences.userscripts_directory.as_deref())
             .expect("Loading userscripts failed")
         {

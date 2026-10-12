@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use std::{env, panic};
+use std::panic;
 
 use crate::desktop::app::App;
 use crate::desktop::event_loop::ServoShellEventLoop;
 use crate::panic_hook;
 use crate::prefs::{ArgumentParsingResult, parse_command_line_arguments};
 
-pub fn main() {
+pub fn main(args: Vec<String>, embedding: Option<crate::Embedding>) {
     crate::crash_handler::install();
     crate::init_crypto();
 
@@ -17,8 +17,6 @@ pub fn main() {
     // log_panics::init()?
     panic::set_hook(Box::new(panic_hook::panic_hook));
 
-    // Skip the first argument, which is the binary name.
-    let args: Vec<String> = env::args().skip(1).collect();
     let (opts, preferences, servoshell_preferences) = match parse_command_line_arguments(&*args) {
         ArgumentParsingResult::ContentProcess(token) => return servo::run_content_process(token),
         ArgumentParsingResult::ChromeProcess(opts, preferences, servoshell_preferences) => {
@@ -42,6 +40,7 @@ pub fn main() {
 
     {
         let mut app = App::new(opts, preferences, servoshell_preferences, &event_loop);
+        app.set_embedding(embedding);
         event_loop.run_app(&mut app);
     }
 

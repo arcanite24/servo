@@ -38,7 +38,22 @@ pub mod platform {
 
 #[cfg(not(any(target_os = "android", target_env = "ohos")))]
 pub fn main() {
-    desktop::cli::main()
+    desktop::cli::main(std::env::args().skip(1).collect(), None)
+}
+
+/// What an application that embeds servoshell adds to it: its own URL schemes (an app scheme
+/// served from the package, say) and scripts that run in every page before the page's own.
+#[cfg(not(any(target_os = "android", target_env = "ohos")))]
+pub struct Embedding {
+    pub protocols: servo::protocol_handler::ProtocolRegistry,
+    pub user_scripts: Vec<String>,
+}
+
+/// Run servoshell for an embedding application, with `args` in place of the command line's
+/// (without the program name). The window, input, gamepads and WebDriver are servoshell's.
+#[cfg(not(any(target_os = "android", target_env = "ohos")))]
+pub fn main_with(args: Vec<String>, embedding: Embedding) {
+    desktop::cli::main(args, Some(embedding))
 }
 
 pub fn init_crypto() {
