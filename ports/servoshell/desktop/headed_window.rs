@@ -389,6 +389,9 @@ impl HeadedWindow {
         let Some(active_webview) = window.active_webview() else {
             return false;
         };
+        if self.app_mode {
+            return self.handle_app_mode_key_bindings(&active_webview, window, key_event);
+        }
 
         let mut handled = true;
         ShortcutMatcher::from_event(key_event.event.clone())
@@ -483,6 +486,40 @@ impl HeadedWindow {
                 );
             })
             .shortcut(CMD_OR_CONTROL, 'Q', || state.schedule_exit())
+            .otherwise(|| handled = false);
+        handled
+    }
+
+    /// In application mode the page owns the keyboard, as in a game or other single-page app: no
+    /// tabs, history, reload, zoom or debugging keys. Only the editing keys remain, and on macOS the
+    /// platform's close and quit keys, which ask the page first like the window's close button.
+    /// (On other platforms Control+W and Control+Q go to the page.)
+    fn handle_app_mode_key_bindings(
+        &self,
+        webview: &WebView,
+        window: &Rc<ServoShellWindow>,
+        key_event: &KeyboardEvent,
+    ) -> bool {
+        let mut handled = true;
+        ShortcutMatcher::from_event(key_event.event.clone())
+            .shortcut(CMD_OR_CONTROL, 'X', || {
+                webview.notify_input_event(InputEvent::EditingAction(servo::EditingActionEvent::Cut));
+            })
+            .shortcut(CMD_OR_CONTROL, 'C', || {
+                webview
+                    .notify_input_event(InputEvent::EditingAction(servo::EditingActionEvent::Copy));
+            })
+            .shortcut(CMD_OR_CONTROL, 'V', || {
+                webview.notify_input_event(InputEvent::EditingAction(
+                    servo::EditingActionEvent::Paste,
+                ));
+            })
+            .optional_shortcut(cfg!(target_os = "macos"), CMD_OR_CONTROL, 'W', || {
+                self.request_close(webview, window.clone())
+            })
+            .optional_shortcut(cfg!(target_os = "macos"), CMD_OR_CONTROL, 'Q', || {
+                self.request_close(webview, window.clone())
+            })
             .otherwise(|| handled = false);
         handled
     }
@@ -1121,6 +1158,10 @@ impl PlatformWindow for HeadedWindow {
             return;
         };
         if result.intersects(InputEventResult::DefaultPrevented | InputEventResult::Consumed) {
+            return;
+        }
+        // In application mode the page owns the keyboard: no zoom or reload keys.
+        if self.app_mode {
             return;
         }
 
