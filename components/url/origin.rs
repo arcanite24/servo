@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::cell::{Ref, RefCell};
 use std::net::IpAddr;
 use std::rc::Rc;
+use std::sync::RwLock;
 
 use malloc_size_of::malloc_size_of_is_0;
 use malloc_size_of_derive::MallocSizeOf;
@@ -21,6 +22,29 @@ pub enum ImmutableOrigin {
 
     /// Consists of the URL's scheme, host and port
     Tuple(String, Host, u16),
+}
+
+/// Schemes an embedder registered as standard and secure (see [`register_standard_secure_scheme`]).
+static STANDARD_SECURE_SCHEMES: RwLock<Vec<String>> = RwLock::new(Vec::new());
+
+/// Treat `scheme` as a standard, secure scheme, as Chromium's privileged schemes: its URLs get a
+/// tuple origin (scheme, host, port 0) instead of an opaque one, so pages served under it are
+/// same-origin with each other and their `'self'` sources match, and that origin is potentially
+/// trustworthy. For an embedder's own app scheme; it applies to the whole process.
+pub fn register_standard_secure_scheme(scheme: &str) {
+    let mut schemes = STANDARD_SECURE_SCHEMES.write().unwrap_or_else(|e| e.into_inner());
+    if !schemes.iter().any(|s| s == scheme) {
+        schemes.push(scheme.to_owned());
+    }
+}
+
+/// Whether an embedder registered `scheme` with [`register_standard_secure_scheme`].
+pub fn is_standard_secure_scheme(scheme: &str) -> bool {
+    STANDARD_SECURE_SCHEMES
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .any(|s| s == scheme)
 }
 
 pub trait DomainComparable {
@@ -59,6 +83,16 @@ impl ImmutableOrigin {
     pub fn new(url: &Url) -> ImmutableOrigin {
         if url.scheme() == "file" {
             return Self::new_opaque_for_file();
+        }
+
+        if let Some(host) = url.host() &&
+            is_standard_secure_scheme(url.scheme())
+        {
+            return ImmutableOrigin::Tuple(
+                url.scheme().to_owned(),
+                host.to_owned(),
+                url.port().unwrap_or(0),
+            );
         }
 
         match url.origin() {
@@ -174,6 +208,12 @@ impl ImmutableOrigin {
         if let ImmutableOrigin::Tuple(scheme, host, _) = self {
             // 3. If origin’s scheme is either "https" or "wss", return "Potentially Trustworthy"
             if scheme == "https" || scheme == "wss" {
+                return true;
+            }
+
+            // 7. If origin's scheme component is one which the user agent considers to be
+            // authenticated, return "Potentially Trustworthy": an embedder's standard secure scheme.
+            if is_standard_secure_scheme(scheme) {
                 return true;
             }
 

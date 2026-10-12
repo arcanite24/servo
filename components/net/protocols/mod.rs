@@ -13,7 +13,7 @@ use http::StatusCode;
 use log::error;
 use net_traits::blob_url_store::UrlWithBlobClaim;
 use net_traits::filemanager_thread::RelativePos;
-use net_traits::request::Request;
+use net_traits::request::{BodyChunkRequest, BodyChunkResponse, Request};
 use net_traits::response::Response;
 use net_traits::{DiscardFetch, NetworkError};
 use rustc_hash::FxHashMap;
@@ -70,6 +70,61 @@ pub trait ProtocolHandler: Send + Sync {
     fn is_secure(&self) -> bool {
         false
     }
+
+    /// Specify if this custom protocol is a standard scheme, as `http`: its URLs get a tuple
+    /// origin (scheme, host, port) rather than an opaque one, so an app served under it is
+    /// same-origin with itself (module scripts, `fetch`, storage and CSP `'self'` all work). A
+    /// standard scheme must also be [secure](Self::is_secure); its origin is then potentially
+    /// trustworthy. For an embedder's own app scheme, as Chromium's privileged schemes.
+    fn is_standard(&self) -> bool {
+        false
+    }
+}
+
+/// The whole body of `request` (empty when it has none), for a protocol handler that accepts
+/// uploads such as a `POST` from `fetch`. Fails when the body stream fails or exceeds `limit`
+/// bytes.
+pub fn read_request_body(
+    request: &Request,
+    limit: usize,
+) -> impl Future<Output = Result<Vec<u8>, NetworkError>> + Send + 'static {
+    let stream = request.body.as_ref().map(|body| body.clone_stream());
+    async move {
+        let Some(stream) = stream else {
+            return Ok(Vec::new());
+        };
+        let failed = |why: &str| NetworkError::ResourceLoadError(format!("Request body: {why}"));
+        tokio::task::spawn_blocking(move || {
+            let (sender, receiver) =
+                ipc_channel::ipc::channel::<BodyChunkResponse>().map_err(|_| failed("no channel"))?;
+            let request_chunk = |message: BodyChunkRequest| {
+                stream
+                    .lock()
+                    .as_ref()
+                    .ok_or_else(|| failed("the stream is closed"))?
+                    .send(message)
+                    .map_err(|_| failed("the stream is closed"))
+            };
+            request_chunk(BodyChunkRequest::Connect(sender))?;
+            request_chunk(BodyChunkRequest::Chunk)?;
+            let mut body = Vec::new();
+            loop {
+                match receiver.recv().map_err(|_| failed("the stream ended"))? {
+                    BodyChunkResponse::Chunk(bytes) => {
+                        if body.len() + bytes.len() > limit {
+                            return Err(failed("too large"));
+                        }
+                        body.extend_from_slice(&bytes);
+                        request_chunk(BodyChunkRequest::Chunk)?;
+                    },
+                    BodyChunkResponse::Done => return Ok(body),
+                    BodyChunkResponse::Error => return Err(failed("the stream failed")),
+                }
+            }
+        })
+        .await
+        .map_err(|_| failed("the reader stopped"))?
+    }
 }
 
 #[derive(Default)]
@@ -112,6 +167,9 @@ impl ProtocolRegistry {
         }
 
         if let Entry::Vacant(entry) = self.handlers.entry(scheme.into()) {
+            if handler.is_standard() && handler.is_secure() {
+                servo_url::register_standard_secure_scheme(scheme);
+            }
             entry.insert(Box::new(handler));
             Ok(())
         } else {

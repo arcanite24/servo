@@ -23,7 +23,10 @@ use servo_arc::Arc;
 pub use url::Host;
 use url::{Position, Url};
 
-pub use crate::origin::{ImmutableOrigin, MutableOrigin, OpaqueOrigin, OriginSnapshot};
+pub use crate::origin::{
+    ImmutableOrigin, MutableOrigin, OpaqueOrigin, OriginSnapshot, is_standard_secure_scheme,
+    register_standard_secure_scheme,
+};
 
 const DATA_URL_DISPLAY_LENGTH: usize = 40;
 

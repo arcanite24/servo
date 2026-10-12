@@ -135,7 +135,7 @@ pub mod webxr {
 pub mod protocol_handler {
     pub use net::fetch::methods::{DoneChannel, FetchContext};
     pub use net::filemanager_thread::FILE_CHUNK_SIZE;
-    pub use net::protocols::{ProtocolHandler, ProtocolRegistry};
+    pub use net::protocols::{ProtocolHandler, ProtocolRegistry, read_request_body};
     pub use net_traits::filemanager_thread::RelativePos;
     pub use net_traits::http_status::HttpStatus;
     pub use net_traits::request::Request;
