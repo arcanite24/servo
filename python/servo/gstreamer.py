@@ -123,15 +123,20 @@ def windows_dlls() -> list[str]:
     return GSTREAMER_WIN_DEPENDENCY_LIBS + [f"{lib}-1.0-0.dll" for lib in GSTREAMER_BASE_LIBS]
 
 
+def audio_only() -> bool:
+    """SERVO_GSTREAMER_PLUGINS=audio packages the `media-gstreamer-audio` plugin set."""
+    return os.environ.get("SERVO_GSTREAMER_PLUGINS") == "audio"
+
+
 def windows_plugins() -> list[str]:
-    plugins = load_plugin_libraries_from_text_file("common.rs.in")
+    plugins = load_plugin_libraries_from_text_file("audio.rs.in" if audio_only() else "common.rs.in")
     plugins.extend(load_plugin_libraries_from_text_file("windows.rs.in"))
     return [f"{plugin}.dll" for plugin in plugins]
 
 
 def macos_plugins() -> list[str]:
-    plugins = load_plugin_libraries_from_text_file("common.rs.in")
-    plugins.extend(load_plugin_libraries_from_text_file("macos.rs.in"))
+    plugins = load_plugin_libraries_from_text_file("audio.rs.in" if audio_only() else "common.rs.in")
+    plugins.extend(load_plugin_libraries_from_text_file("macos-audio.rs.in" if audio_only() else "macos.rs.in"))
     return [f"lib{plugin}.dylib" for plugin in plugins]
 
 

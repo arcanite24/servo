@@ -2,12 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-#[cfg(any(target_os = "windows", target_os = "macos"))]
+#[cfg(all(any(target_os = "windows", target_os = "macos"), not(feature = "media-gstreamer-audio")))]
 static COMMON_PLUGINS: &[&str] = &include!("gstreamer_plugin_lists/common.rs.in");
+#[cfg(all(any(target_os = "windows", target_os = "macos"), feature = "media-gstreamer-audio"))]
+static COMMON_PLUGINS: &[&str] = &include!("gstreamer_plugin_lists/audio.rs.in");
 #[cfg(target_os = "windows")]
 static WINDOWS_PLUGINS: &[&str] = &include!("gstreamer_plugin_lists/windows.rs.in");
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", not(feature = "media-gstreamer-audio")))]
 static MACOS_PLUGINS: &[&str] = &include!("gstreamer_plugin_lists/macos.rs.in");
+#[cfg(all(target_os = "macos", feature = "media-gstreamer-audio"))]
+static MACOS_PLUGINS: &[&str] = &include!("gstreamer_plugin_lists/macos-audio.rs.in");
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub(crate) fn gstreamer_plugins() -> Vec<String> {

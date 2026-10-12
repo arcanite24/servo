@@ -1,0 +1,22 @@
+// The audio-only plugin set (`media-gstreamer-audio`): <audio> and Web Audio playback of WAV and of Ogg Opus,
+// without video, WebRTC or libav. Used for both macOS and Windows in place of common.rs.in.
+// The format of this file is intended to be directly `include!()` able as a [&'static str] in Rust,
+// and a valid python list[str] after stripping the `//` comments at the beginning of lines (from gstreamer.py).
+[
+// gstreamer
+"gstcoreelements",
+// gst-plugins-base
+"gstapp",
+"gstaudioconvert",
+"gstaudioresample",
+"gstogg",
+"gstopus",
+"gstplayback",
+"gsttypefindfunctions",
+"gstvolume",
+// gst-plugins-good
+"gstaudioparsers",
+"gstautodetect",
+"gstinterleave",
+"gstwavparse",
+]
