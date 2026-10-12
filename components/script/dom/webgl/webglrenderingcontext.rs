@@ -38,6 +38,7 @@ use servo_canvas_traits::webgl::{
 use servo_config::pref;
 use webrender_api::ImageKey;
 
+use stylo_atoms::Atom;
 use crate::canvas_context::{CanvasContext, HTMLCanvasElementOrOffscreenCanvas};
 use crate::dom::bindings::buffer_source::get_buffer_source_slice;
 use crate::dom::bindings::codegen::Bindings::ANGLEInstancedArraysBinding::ANGLEInstancedArraysConstants;
@@ -56,6 +57,7 @@ use crate::dom::bindings::codegen::UnionTypes::{
 use crate::dom::bindings::conversions::DerivedFrom;
 use crate::dom::bindings::error::{Error, ErrorResult, Fallible};
 use crate::dom::bindings::inheritance::Castable;
+use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::{DomOnceCell, DomRoot, MutNullableDom};
 use crate::dom::bindings::str::DOMString;
@@ -205,6 +207,10 @@ pub(crate) struct WebGLRenderingContext {
     textures: Textures,
     #[no_trace]
     api_type: GlType,
+    /// The WebGL spec's "webgl context lost flag" (§5.15), set by `WEBGL_lose_context`.
+    context_lost: Cell<bool>,
+    /// Whether the page cancelled `webglcontextlost`, which allows the context to be restored.
+    restore_allowed: Cell<bool>,
     droppable: DroppableWebGLRenderingContext,
 }
 
@@ -276,6 +282,8 @@ impl WebGLRenderingContext {
                 current_vao_webgl2: Default::default(),
                 textures: Textures::new(max_combined_texture_image_units),
                 api_type: ctx_data.api_type,
+                context_lost: Cell::new(false),
+                restore_allowed: Cell::new(false),
                 droppable: DroppableWebGLRenderingContext {
                     webgl_sender: ctx_data.sender,
                 },
@@ -324,6 +332,67 @@ impl WebGLRenderingContext {
                 }
                 None
             },
+        }
+    }
+
+    /// <https://registry.khronos.org/webgl/specs/latest/1.0/#CONTEXT_LOST>: the "lose the context" steps, for
+    /// `WEBGL_lose_context.loseContext()`. The loss is simulated: the GL context and its objects live on, so the page's
+    /// objects keep working after a restore (the spec makes them invalid; pages that handle restoring re-create
+    /// theirs, and the old ones are deleted when they are collected, as before).
+    pub(crate) fn lose_context(&self) {
+        if self.context_lost.get() {
+            return;
+        }
+        self.context_lost.set(true);
+        self.restore_allowed.set(false);
+        self.last_error.set(Some(WebGLError::ContextLost));
+        let this = Trusted::new(self);
+        self.global()
+            .task_manager()
+            .dom_manipulation_task_source()
+            .queue(task!(fire_webglcontextlost: move |cx| {
+                let this = this.root();
+                let not_cancelled = this.fire_context_event(cx, "webglcontextlost", true);
+                this.restore_allowed.set(!not_cancelled);
+            }));
+    }
+
+    /// <https://registry.khronos.org/webgl/extensions/WEBGL_lose_context/>: `restoreContext()`, then the
+    /// "restore the context" steps (§5.15.3) in a task: the drawing buffer is cleared and `webglcontextrestored` fires.
+    pub(crate) fn restore_context(&self) {
+        if !self.context_lost.get() || !self.restore_allowed.get() {
+            return self.webgl_error(WebGLError::InvalidOperation);
+        }
+        self.restore_allowed.set(false);
+        let this = Trusted::new(self);
+        self.global()
+            .task_manager()
+            .dom_manipulation_task_source()
+            .queue(task!(fire_webglcontextrestored: move |cx| {
+                let this = this.root();
+                if !this.context_lost.get() {
+                    return;
+                }
+                this.context_lost.set(false);
+                this.last_error.set(None);
+                this.mark_as_dirty();
+                this.fire_context_event(cx, "webglcontextrestored", false);
+            }));
+    }
+
+    /// Fires a `WebGLContextEvent` at the canvas; false when a listener cancelled it.
+    fn fire_context_event(&self, cx: &mut JSContext, name: &'static str, cancelable: bool) -> bool {
+        let event = WebGLContextEvent::new(
+            cx,
+            self.global().as_window(),
+            Atom::from(name),
+            EventBubbles::DoesNotBubble,
+            if cancelable { EventCancelable::Cancelable } else { EventCancelable::NotCancelable },
+            DOMString::new(),
+        );
+        match &self.canvas {
+            HTMLCanvasElementOrOffscreenCanvas::HTMLCanvasElement(canvas) => event.upcast::<Event>().fire(cx, canvas.upcast()),
+            HTMLCanvasElementOrOffscreenCanvas::OffscreenCanvas(canvas) => event.upcast::<Event>().fire(cx, canvas.upcast()),
         }
     }
 
@@ -2591,7 +2660,7 @@ impl WebGLRenderingContextMethods<crate::DomTypeHolder> for WebGLRenderingContex
 
     /// <https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.13>
     fn IsContextLost(&self) -> bool {
-        false
+        self.context_lost.get()
     }
 
     /// <https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.14>
