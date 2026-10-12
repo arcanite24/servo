@@ -2945,7 +2945,11 @@ impl GlobalScope {
         introduction_type: Option<&'static CStr>,
         rval: Option<MutableHandleValue>,
     ) -> Result<(), JavaScriptEvaluationError> {
-        assert!(self.can_run_script());
+        // Callers outside the page (user scripts, WebDriver, the embedder) can reach a document that may not run
+        // script, such as the sandboxed crash page shown after a panic; that is an error, not another panic.
+        if !self.can_run_script() {
+            return Err(JavaScriptEvaluationError::EvaluationFailure(None));
+        }
 
         run_a_script::<DomTypeHolder, _, _>(cx, self, |cx| {
             let url = self.api_base_url();
