@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 
 use log::debug;
 use paint_api::{CrossProcessPaintApi, PainterSurfmanDetailsMap, WebRenderExternalImageIdManager};
+use profile_traits::time::ProfilerChan;
 use servo_canvas_traits::webgl::{WebGLContextId, WebGLMsg, WebGLThreads, webgl_channel};
 use surfman::Device;
 use surfman::chains::SwapChains;
@@ -33,6 +34,7 @@ impl WebGLComm {
         paint_api: CrossProcessPaintApi,
         external_image_id_manager: WebRenderExternalImageIdManager,
         painter_surfman_details_map: PainterSurfmanDetailsMap,
+        time_profiler_chan: ProfilerChan,
     ) -> WebGLComm {
         debug!("WebGLThreads::new()");
         let (sender, receiver) = webgl_channel::<WebGLMsg>().unwrap();
@@ -53,6 +55,7 @@ impl WebGLComm {
             webrender_swap_chains: swap_chains.clone(),
             painter_surfman_details_map,
             busy_webgl_context_map: busy_webgl_context_map.clone(),
+            time_profiler_chan,
             #[cfg(feature = "webxr")]
             webxr_init,
         };

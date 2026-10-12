@@ -213,6 +213,7 @@ impl Paint {
             state.paint_proxy.cross_process_paint_api.clone(),
             webrender_external_image_id_manager.clone(),
             painter_surfman_details_map.clone(),
+            state.time_profiler_chan.clone(),
         );
 
         // Create the WebXR main thread.

@@ -28,8 +28,10 @@ use paint_api::{
 };
 use parking_lot::RwLock;
 use pixels::{self, PixelFormat, SnapshotAlphaMode, unmultiply_inplace};
+use profile_traits::time::{ProfilerCategory, ProfilerChan, send_profile_data};
 use rustc_hash::FxHashMap;
 use servo_base::Epoch;
+use servo_base::cross_process_instant::CrossProcessInstant;
 use servo_base::generic_channel::{
     GenericReceiver, GenericSender, GenericSharedMemory, RoutedReceiver,
 };
@@ -243,6 +245,8 @@ pub(crate) struct WebGLThread {
     /// A usage map used to delay the deletion of WebGL contexts until all WebRender
     /// rendering is finished, so that any existing `Surface`s can be properly released.
     busy_webgl_context_map: WebGLContextBusyMap,
+    /// Where command and swap timings go, when the time profiler runs.
+    time_profiler_chan: ProfilerChan,
 
     #[cfg(feature = "webxr")]
     /// The bridge to WebXR
@@ -258,6 +262,7 @@ pub(crate) struct WebGLThreadInit {
     pub webrender_swap_chains: SwapChains<WebGLContextId, Device>,
     pub painter_surfman_details_map: PainterSurfmanDetailsMap,
     pub busy_webgl_context_map: WebGLContextBusyMap,
+    pub time_profiler_chan: ProfilerChan,
     #[cfg(feature = "webxr")]
     pub webxr_init: WebXRBridgeInit,
 }
@@ -276,6 +281,7 @@ impl WebGLThread {
             webrender_swap_chains,
             painter_surfman_details_map,
             busy_webgl_context_map,
+            time_profiler_chan,
             #[cfg(feature = "webxr")]
             webxr_init,
         }: WebGLThreadInit,
@@ -292,6 +298,7 @@ impl WebGLThread {
             webrender_swap_chains,
             painter_surfman_details_map,
             busy_webgl_context_map,
+            time_profiler_chan,
             #[cfg(feature = "webxr")]
             webxr_bridge: Some(WebXRBridge::new(webxr_init)),
         }
@@ -346,6 +353,23 @@ impl WebGLThread {
         }
     }
 
+    /// The start of a timed span, or `None` when the time profiler is off, so an untimed run reads no clock.
+    fn profiling_start(&self) -> Option<CrossProcessInstant> {
+        self.time_profiler_chan.0.as_ref().map(|_| CrossProcessInstant::now())
+    }
+
+    fn profiling_end(&self, category: ProfilerCategory, start: Option<CrossProcessInstant>) {
+        if let Some(start) = start {
+            send_profile_data(
+                category,
+                None,
+                &self.time_profiler_chan,
+                start,
+                CrossProcessInstant::now(),
+            );
+        }
+    }
+
     /// Handles a generic WebGLMsg message
     fn handle_msg(&mut self, msg: WebGLMsg, webgl_chan: &WebGLChan) -> bool {
         trace!("processing {:?}", msg);
@@ -387,19 +411,25 @@ impl WebGLThread {
                 self.remove_webgl_context(ctx_id);
             },
             WebGLMsg::WebGLCommand(ctx_id, command, backtrace) => {
+                let start = self.profiling_start();
                 self.handle_webgl_command(ctx_id, command, backtrace);
+                self.profiling_end(ProfilerCategory::WebGLCommands, start);
             },
             WebGLMsg::WebGLCommands(ctx_id, commands) => {
+                let start = self.profiling_start();
                 for (command, backtrace) in commands {
                     self.handle_webgl_command(ctx_id, command, backtrace);
                 }
+                self.profiling_end(ProfilerCategory::WebGLCommands, start);
             },
             WebGLMsg::WebXRCommand(_command) => {
                 #[cfg(feature = "webxr")]
                 self.handle_webxr_command(_command);
             },
             WebGLMsg::SwapBuffers(swap_ids, canvas_epoch, sent_time) => {
+                let start = self.profiling_start();
                 self.handle_swap_buffers(canvas_epoch, swap_ids, sent_time);
+                self.profiling_end(ProfilerCategory::WebGLSwapBuffers, start);
             },
             WebGLMsg::FinishedRenderingToContext(context_id) => {
                 self.handle_finished_rendering_to_context(context_id);

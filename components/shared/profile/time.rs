@@ -123,6 +123,12 @@ pub enum ProfilerCategory {
 
     IpcReceiver = 0x94,
     IpcBytesReceiver = 0x95,
+
+    /// The WebGL thread is running a message's WebGL commands: validation and GL calls, without the swap.
+    WebGLCommands = 0x96,
+
+    /// The WebGL thread is swapping a canvas's buffers for WebRender, which waits on the GL driver.
+    WebGLSwapBuffers = 0x97,
 }
 
 impl ProfilerCategory {
@@ -172,6 +178,8 @@ impl ProfilerCategory {
             ProfilerCategory::TimeToInteractive => "TimeToInteractive",
             ProfilerCategory::IpcReceiver => "IpcReceiver",
             ProfilerCategory::IpcBytesReceiver => "IpcBytesReceiver",
+            ProfilerCategory::WebGLCommands => "WebGLCommands",
+            ProfilerCategory::WebGLSwapBuffers => "WebGLSwapBuffers",
         }
     }
 }

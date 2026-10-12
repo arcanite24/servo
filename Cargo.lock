@@ -9522,6 +9522,7 @@ dependencies = [
  "servo-canvas-traits",
  "servo-paint-api",
  "servo-pixels",
+ "servo-profile-traits",
  "servo-webxr",
  "servo-webxr-api",
  "surfman",
