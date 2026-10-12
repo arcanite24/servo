@@ -430,6 +430,18 @@ opt-level = "s"
 inherits = "production"
 strip = true
 
+# Tinkerpatch's shipping engine (BACKLOG_NATIVE.md N-21): release with whole-program LTO and one codegen unit, at
+# full speed rather than `production`'s size optimisation. Line tables go to a separate debug package for crash
+# reports.
+[profile.tinkerpatch]
+inherits = "release"
+debug-assertions = false
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+debug = "line-tables-only"
+split-debuginfo = "packed"
+
 [profile.profiling]
 inherits = "release"
 debug-assertions = false

@@ -52,6 +52,10 @@ default_web_features = ["servo/default_web_features", "gamepad", "webgpu", "webg
 # Bundle required resources in the binary.
 bundled = ["servo/bundled"]
 
+# Tinkerpatch's engine (BACKLOG_NATIVE.md N-21): the default set without WebGPU and WebXR, which the game never uses.
+# Build with `--no-default-features --features tinkerpatch`.
+tinkerpatch = ["bundled", "max_log_level", "js_jit", "servo-allocator/use-jemalloc", "servo/brotli-compression-stream", "servo/clipboard", "servo/webcrypto", "gamepad", "webgl"]
+
 ## Individual features below this line
 baked-in-resources = ["servo/baked-in-resources"]
 bundled_freetype = ["servo/bundled_freetype"]
