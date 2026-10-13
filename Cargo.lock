@@ -8316,6 +8316,7 @@ dependencies = [
  "kurbo",
  "log",
  "malloc_size_of_derive",
+ "parking_lot",
  "serde",
  "servo-base",
  "servo-fonts-traits",

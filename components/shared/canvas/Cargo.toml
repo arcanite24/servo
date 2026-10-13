@@ -25,6 +25,7 @@ kurbo = { workspace = true, features = ["serde"] }
 log = { workspace = true }
 malloc_size_of = { workspace = true }
 malloc_size_of_derive = { workspace = true }
+parking_lot = { workspace = true }
 pixels = { workspace = true }
 profile_traits = { workspace = true }
 serde = { workspace = true }

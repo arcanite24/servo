@@ -203,7 +203,9 @@ pub struct WebGLMsgSender {
     /// call on the script thread; batching sends them a few hundred at a time.
     #[serde(skip)]
     #[ignore_malloc_size_of = "Commands in flight"]
-    pending: std::sync::Arc<std::sync::Mutex<Vec<(WebGLCommand, WebGLCommandBacktrace)>>>,
+    /// Only the script thread takes the lock, so it is never contended: parking_lot's costs one
+    /// atomic operation, where std's is a pthread mutex on macOS, which showed up on every call.
+    pending: std::sync::Arc<parking_lot::Mutex<Vec<(WebGLCommand, WebGLCommandBacktrace)>>>,
 }
 
 /// The most commands queued before they are sent anyway.
@@ -220,7 +222,7 @@ impl WebGLMsgSender {
 
     /// Sends every queued command. Called before any other message for this context, so ordering holds.
     pub fn flush(&self) -> WebGLSendResult {
-        let batch = std::mem::take(&mut *self.pending.lock().unwrap());
+        let batch = std::mem::take(&mut *self.pending.lock());
         if batch.is_empty() {
             return Ok(());
         }
@@ -238,7 +240,7 @@ impl WebGLMsgSender {
     pub fn send(&self, command: WebGLCommand, backtrace: WebGLCommandBacktrace) -> WebGLSendResult {
         let sync = command.is_sync();
         let full = {
-            let mut pending = self.pending.lock().unwrap();
+            let mut pending = self.pending.lock();
             pending.push((command, backtrace));
             pending.len() >= MAX_QUEUED_COMMANDS
         };
