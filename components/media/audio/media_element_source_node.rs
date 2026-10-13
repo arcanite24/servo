@@ -57,7 +57,7 @@ impl AudioNodeEngine for MediaElementSourceNode {
     fn process(&mut self, mut inputs: Chunk, _info: &BlockInfo) -> Chunk {
         debug_assert!(inputs.is_empty());
 
-        let buffers = self.buffers.lock().unwrap();
+        let mut buffers = self.buffers.lock().unwrap();
         let chans = buffers.len() as u8;
 
         if chans == 0 {
@@ -95,7 +95,12 @@ impl AudioNodeEngine for MediaElementSourceNode {
             inputs.blocks.push(block)
         }
 
-        self.playback_offset = next_offset;
+        // Drop what has played, so the buffers hold only what is still to come rather than every
+        // sample the element has ever produced.
+        for buffer in buffers.iter_mut() {
+            buffer.drain(..next_offset.min(buffer.len()));
+        }
+        self.playback_offset = 0;
 
         inputs
     }
