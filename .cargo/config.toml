@@ -31,6 +31,8 @@ linker = "lld-link.exe"
 [env]
 MACOSX_DEPLOYMENT_TARGET = "13.0"
 RUSTC_BOOTSTRAP = "crown,script,script_webgpu,script_bindings,style_tests,mozjs,mozjs_sys"
+# libopus (servo-media-cpal) builds from a CMake project older than CMake 4 accepts.
+CMAKE_POLICY_VERSION_MINIMUM = "3.5"
 
 [build]
 rustdocflags = ["--document-private-items"]
