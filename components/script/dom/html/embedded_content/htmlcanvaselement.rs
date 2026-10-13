@@ -417,6 +417,14 @@ impl HTMLCanvasElement {
 
     pub(crate) fn update_rendering(&self, epoch: Epoch) -> Option<ImageKey> {
         let context = self.context()?;
+        // The document has taken this canvas off its dirty list, so a WebGL context's next draw marks it again.
+        match &*context {
+            #[cfg(feature = "webgl")]
+            RenderingContext::WebGL(context) => context.clear_marked_dirty(),
+            #[cfg(feature = "webgl")]
+            RenderingContext::WebGL2(context) => context.base_context().clear_marked_dirty(),
+            _ => {},
+        }
         let image_key = self.image_key.get()?;
         let pending = match &*context {
             RenderingContext::Placeholder(..) => false,

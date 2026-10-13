@@ -212,6 +212,10 @@ pub(crate) struct WebGLRenderingContext {
     context_lost: Cell<bool>,
     /// Whether the page cancelled `webglcontextlost`, which allows the context to be restored.
     restore_allowed: Cell<bool>,
+    /// Whether the canvas is already in its document's dirty list for the next rendering update. Every draw marks
+    /// the canvas dirty, and doing that work once per frame instead of once per draw saves the global and document
+    /// lookups it takes (N-22).
+    marked_dirty: Cell<bool>,
     /// Buffer names the WebGL thread generated ahead of `createBuffer`.
     #[ignore_malloc_size_of = "A few names and a channel"]
     #[no_trace]
@@ -360,6 +364,7 @@ impl WebGLRenderingContext {
                 api_type: ctx_data.api_type,
                 context_lost: Cell::new(false),
                 restore_allowed: Cell::new(false),
+                marked_dirty: Cell::new(false),
                 buffer_names: Default::default(),
                 vertex_array_names: Default::default(),
                 droppable: DroppableWebGLRenderingContext {
@@ -476,6 +481,11 @@ impl WebGLRenderingContext {
 
     pub(crate) fn set_image_key(&self, image_key: ImageKey) {
         self.droppable.webgl_sender.set_image_key(image_key);
+    }
+
+    /// The document took the canvas off its dirty list for a rendering update: the next draw marks it again.
+    pub(crate) fn clear_marked_dirty(&self) {
+        self.marked_dirty.set(false);
     }
 
     pub(crate) fn update_rendering(&self, canvas_epoch: Epoch) -> bool {
@@ -2339,7 +2349,7 @@ impl CanvasContext for WebGLRenderingContext {
 
     fn mark_as_dirty(&self) {
         // If we have a bound framebuffer, then don't mark the canvas as dirty.
-        if self.bound_draw_framebuffer.get().is_some() {
+        if self.marked_dirty.get() || self.bound_draw_framebuffer.get().is_some() {
             return;
         }
 
@@ -2350,6 +2360,7 @@ impl CanvasContext for WebGLRenderingContext {
         }
 
         self.canvas.mark_as_dirty();
+        self.marked_dirty.set(true);
     }
 }
 
