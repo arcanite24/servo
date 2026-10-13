@@ -309,7 +309,9 @@ impl Convert<LatencyCategory> for AudioContextLatencyCategory {
 impl Convert<RealTimeAudioContextOptions> for &AudioContextOptions {
     fn convert(self) -> RealTimeAudioContextOptions {
         RealTimeAudioContextOptions {
-            sample_rate: *self.sampleRate.unwrap_or(Finite::wrap(44100.)),
+            // Without a requested rate, 48 kHz: what most output devices run at, and the rate Opus
+            // decodes at, so a media element's audio enters the graph without conversion.
+            sample_rate: *self.sampleRate.unwrap_or(Finite::wrap(48000.)),
             latency_hint: match self.latencyHint {
                 AudioContextLatencyCategoryOrDouble::AudioContextLatencyCategory(category) => {
                     category.convert()
