@@ -1476,6 +1476,12 @@ impl WebGLImpl {
                 Self::compile_shader(gl, shader_id, source)
             },
             WebGLCommand::CreateBuffer(ref chan) => Self::create_buffer(gl, chan),
+            WebGLCommand::GenBuffers(count, ref chan) => {
+                let names = (0..count)
+                    .filter_map(|_| unsafe { gl.create_buffer() }.ok().map(WebGLBufferId::from_glow))
+                    .collect();
+                let _ = chan.send(names);
+            },
             WebGLCommand::CreateFramebuffer(ref chan) => Self::create_framebuffer(gl, chan),
             WebGLCommand::CreateRenderbuffer(ref chan) => Self::create_renderbuffer(gl, chan),
             WebGLCommand::CreateTexture(ref chan) => Self::create_texture(gl, chan),
@@ -1955,6 +1961,12 @@ impl WebGLImpl {
             WebGLCommand::CreateVertexArray(ref chan) => {
                 let id = Self::create_vertex_array(gl);
                 let _ = chan.send(id);
+            },
+            WebGLCommand::GenVertexArrays(count, ref chan) => {
+                let names = (0..count)
+                    .filter_map(|_| Self::create_vertex_array(gl))
+                    .collect();
+                let _ = chan.send(names);
             },
             WebGLCommand::DeleteVertexArray(id) => {
                 unsafe { gl.delete_vertex_array(id.glow()) };

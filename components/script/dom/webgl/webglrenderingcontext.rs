@@ -31,9 +31,9 @@ use servo_base::{Epoch, generic_channel};
 use servo_canvas_traits::webgl::WebGLError::*;
 use servo_canvas_traits::webgl::{
     AlphaTreatment, GLContextAttributes, GLLimits, GlType, Parameter, SizedDataType, TexDataType,
-    TexFormat, TexParameter, WebGLCommand, WebGLCommandBacktrace, WebGLContextId, WebGLError,
-    WebGLFramebufferBindingRequest, WebGLMsg, WebGLMsgSender, WebGLProgramId, WebGLResult,
-    WebGLSLVersion, WebGLVersion, YAxisTreatment, webgl_channel,
+    TexFormat, TexParameter, WebGLBufferId, WebGLCommand, WebGLCommandBacktrace, WebGLContextId,
+    WebGLError, WebGLFramebufferBindingRequest, WebGLMsg, WebGLMsgSender, WebGLProgramId,
+    WebGLResult, WebGLSLVersion, WebGLVersion, WebGLVertexArrayId, YAxisTreatment, webgl_channel,
 };
 use servo_config::pref;
 use webrender_api::ImageKey;
@@ -211,7 +211,82 @@ pub(crate) struct WebGLRenderingContext {
     context_lost: Cell<bool>,
     /// Whether the page cancelled `webglcontextlost`, which allows the context to be restored.
     restore_allowed: Cell<bool>,
+    /// Buffer names the WebGL thread generated ahead of `createBuffer`.
+    #[ignore_malloc_size_of = "A few names and a channel"]
+    #[no_trace]
+    buffer_names: DomRefCell<NamePool<WebGLBufferId>>,
+    /// Vertex array names the WebGL thread generated ahead of `createVertexArray`.
+    #[ignore_malloc_size_of = "A few names and a channel"]
+    #[no_trace]
+    vertex_array_names: DomRefCell<NamePool<WebGLVertexArrayId>>,
     droppable: DroppableWebGLRenderingContext,
+}
+
+/// Object names generated on the WebGL thread before script asks for them, so that `create*` calls return without
+/// waiting for a reply. Without a pool, each `createBuffer` flushed every queued command and then waited for the
+/// WebGL thread to run them all. The pool refills itself in the background: when it runs low it queues a request
+/// with the other commands, and reads the reply only when it runs dry.
+///
+/// Names from `glGen*` are reserved until deleted, bound or not, so an unused name in the pool stays valid. The
+/// simulated context loss (`WEBGL_lose_context`) keeps the GL context, so the pool survives it too.
+pub(crate) struct NamePool<T>
+where
+    T: for<'de> Deserialize<'de> + Serialize,
+{
+    ready: Vec<T>,
+    pending: Option<generic_channel::GenericReceiver<Vec<T>>>,
+}
+
+impl<T> Default for NamePool<T>
+where
+    T: for<'de> Deserialize<'de> + Serialize,
+{
+    fn default() -> Self {
+        NamePool {
+            ready: Vec::new(),
+            pending: None,
+        }
+    }
+}
+
+/// How many names each request generates, and how few left start the next request.
+const NAME_POOL_BATCH: u32 = 32;
+const NAME_POOL_LOW: usize = 8;
+
+impl<T> NamePool<T>
+where
+    T: for<'de> Deserialize<'de> + Serialize,
+{
+    fn take(
+        &mut self,
+        context: &WebGLRenderingContext,
+        request: fn(u32, generic_channel::GenericSender<Vec<T>>) -> WebGLCommand,
+    ) -> Option<T> {
+        if self.ready.is_empty() {
+            let receiver = match self.pending.take() {
+                Some(receiver) => receiver,
+                None => Self::request(context, request)?,
+            };
+            // The request may still be queued with other commands.
+            let _ = context.droppable.webgl_sender.flush();
+            self.ready = receiver.recv().ok()?;
+            self.ready.reverse();
+        }
+        let name = self.ready.pop();
+        if self.ready.len() < NAME_POOL_LOW && self.pending.is_none() {
+            self.pending = Self::request(context, request);
+        }
+        name
+    }
+
+    fn request(
+        context: &WebGLRenderingContext,
+        request: fn(u32, generic_channel::GenericSender<Vec<T>>) -> WebGLCommand,
+    ) -> Option<generic_channel::GenericReceiver<Vec<T>>> {
+        let (sender, receiver) = webgl_channel()?;
+        context.send_command(request(NAME_POOL_BATCH, sender));
+        Some(receiver)
+    }
 }
 
 impl WebGLRenderingContext {
@@ -284,6 +359,8 @@ impl WebGLRenderingContext {
                 api_type: ctx_data.api_type,
                 context_lost: Cell::new(false),
                 restore_allowed: Cell::new(false),
+                buffer_names: Default::default(),
+                vertex_array_names: Default::default(),
                 droppable: DroppableWebGLRenderingContext {
                     webgl_sender: ctx_data.sender,
                 },
@@ -1299,15 +1376,24 @@ impl WebGLRenderingContext {
         }
     }
 
+    /// A buffer name from the pool, generated ahead of time on the WebGL thread.
+    pub(crate) fn take_buffer_name(&self) -> Option<WebGLBufferId> {
+        self.buffer_names
+            .borrow_mut()
+            .take(self, WebGLCommand::GenBuffers)
+    }
+
+    fn take_vertex_array_name(&self) -> Option<WebGLVertexArrayId> {
+        self.vertex_array_names
+            .borrow_mut()
+            .take(self, WebGLCommand::GenVertexArrays)
+    }
+
     pub(crate) fn create_vertex_array(
         &self,
         cx: &mut JSContext,
     ) -> Option<DomRoot<WebGLVertexArrayObjectOES>> {
-        let (sender, receiver) = webgl_channel().unwrap();
-        self.send_command(WebGLCommand::CreateVertexArray(sender));
-        receiver
-            .recv()
-            .unwrap()
+        self.take_vertex_array_name()
             .map(|id| WebGLVertexArrayObjectOES::new(cx, self, Some(id)))
     }
 
@@ -1315,11 +1401,7 @@ impl WebGLRenderingContext {
         &self,
         cx: &mut JSContext,
     ) -> Option<DomRoot<WebGLVertexArrayObject>> {
-        let (sender, receiver) = webgl_channel().unwrap();
-        self.send_command(WebGLCommand::CreateVertexArray(sender));
-        receiver
-            .recv()
-            .unwrap()
+        self.take_vertex_array_name()
             .map(|id| WebGLVertexArrayObject::new(cx, self, Some(id)))
     }
 

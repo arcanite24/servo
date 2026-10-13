@@ -334,6 +334,9 @@ pub enum WebGLCommand {
     CopyTexImage2D(u32, i32, u32, i32, i32, i32, i32, i32),
     CopyTexSubImage2D(u32, i32, i32, i32, i32, i32, i32, i32),
     CreateBuffer(GenericSender<Option<WebGLBufferId>>),
+    /// Generates buffer names ahead of `createBuffer`, which the script thread then takes from its own pool without
+    /// waiting for the WebGL thread. Not a sync command: the reply is read when the pool runs dry.
+    GenBuffers(u32, GenericSender<Vec<WebGLBufferId>>),
     CreateFramebuffer(GenericSender<Option<WebGLFramebufferId>>),
     CreateRenderbuffer(GenericSender<Option<WebGLRenderbufferId>>),
     CreateTexture(GenericSender<Option<WebGLTextureId>>),
@@ -537,6 +540,8 @@ pub enum WebGLCommand {
     Flush,
     GenerateMipmap(u32),
     CreateVertexArray(GenericSender<Option<WebGLVertexArrayId>>),
+    /// Generates vertex array names ahead of `createVertexArray`, as `GenBuffers` does for buffers.
+    GenVertexArrays(u32, GenericSender<Vec<WebGLVertexArrayId>>),
     DeleteVertexArray(WebGLVertexArrayId),
     BindVertexArray(Option<WebGLVertexArrayId>),
     GetParameterBool(ParameterBool, GenericSender<bool>),
