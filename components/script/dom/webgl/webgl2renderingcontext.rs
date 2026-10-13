@@ -233,8 +233,8 @@ impl WebGL2RenderingContext {
         self.base.current_vao_webgl2(cx)
     }
 
-    pub(crate) fn validate_uniform_block_for_draw(&self) {
-        let program = match self.base.current_program() {
+    pub(crate) fn validate_uniform_block_for_draw(&self, no_gc: &NoGC) {
+        let program = match self.base.current_program_unrooted(no_gc) {
             Some(program) => program,
             None => return,
         };
@@ -246,7 +246,7 @@ impl WebGL2RenderingContext {
                     None => continue,
                 };
                 let indexed = &self.indexed_uniform_buffer_bindings[index as usize];
-                let buffer = match indexed.buffer.get() {
+                let buffer = match indexed.buffer.get_unrooted(no_gc) {
                     Some(buffer) => buffer,
                     None => {
                         self.base.webgl_error(InvalidOperation);
@@ -276,7 +276,10 @@ impl WebGL2RenderingContext {
     }
 
     fn validate_vertex_attribs_for_draw(&self, cx: &mut JSContext) {
-        let program = match self.base.current_program() {
+        // Read without rooting, as the base context's draw checks do (N-22).
+        self.base.ensure_current_vao(cx);
+        let no_gc = cx.no_gc();
+        let program = match self.base.current_program_unrooted(no_gc) {
             Some(program) => program,
             None => return,
         };
@@ -311,7 +314,9 @@ impl WebGL2RenderingContext {
                 constants::FLOAT_MAT4x3,
             ],
         ];
-        let vao = self.current_vao(cx);
+        let Some(vao) = self.base.current_vao_webgl2_unrooted(no_gc) else {
+            return;
+        };
         for prog_attrib in program.active_attribs().iter() {
             // Built-in inputs (gl_VertexID, gl_InstanceID) are active but have no location and read no vertex data;
             // checking them raised INVALID_OPERATION on every attribute-less draw.
@@ -2000,14 +2005,14 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
 
     /// <https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.11>
     fn DrawArrays(&self, cx: &mut JSContext, mode: u32, first: i32, count: i32) {
-        self.validate_uniform_block_for_draw();
+        self.validate_uniform_block_for_draw(cx.no_gc());
         self.validate_vertex_attribs_for_draw(cx);
         self.base.DrawArrays(cx, mode, first, count)
     }
 
     /// <https://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14.11>
     fn DrawElements(&self, cx: &mut JSContext, mode: u32, count: i32, type_: u32, offset: i64) {
-        self.validate_uniform_block_for_draw();
+        self.validate_uniform_block_for_draw(cx.no_gc());
         self.validate_vertex_attribs_for_draw(cx);
         self.base.DrawElements(cx, mode, count, type_, offset)
     }
@@ -4001,7 +4006,7 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
         count: i32,
         primcount: i32,
     ) {
-        self.validate_uniform_block_for_draw();
+        self.validate_uniform_block_for_draw(cx.no_gc());
         self.validate_vertex_attribs_for_draw(cx);
         handle_potential_webgl_error!(
             self.base,
@@ -4020,7 +4025,7 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
         offset: i64,
         primcount: i32,
     ) {
-        self.validate_uniform_block_for_draw();
+        self.validate_uniform_block_for_draw(cx.no_gc());
         self.validate_vertex_attribs_for_draw(cx);
         handle_potential_webgl_error!(
             self.base,
@@ -4044,7 +4049,7 @@ impl WebGL2RenderingContextMethods<crate::DomTypeHolder> for WebGL2RenderingCont
             self.base.webgl_error(InvalidValue);
             return;
         }
-        self.validate_uniform_block_for_draw();
+        self.validate_uniform_block_for_draw(cx.no_gc());
         self.validate_vertex_attribs_for_draw(cx);
         handle_potential_webgl_error!(
             self.base,

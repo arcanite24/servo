@@ -22,6 +22,7 @@ use js::typedarray::{
 };
 use pixels::{self, Alpha, PixelFormat, Snapshot, SnapshotPixelFormat};
 use script_bindings::cell::{DomRefCell, Ref, RefMut};
+use script_bindings::dom::UnrootedDom;
 use script_bindings::reflector::{
     AssociatedMemory, Reflector, reflect_weak_referenceable_dom_object,
 };
@@ -598,12 +599,40 @@ impl WebGLRenderingContext {
     // this: clear() and getParameter(IMPLEMENTATION_COLOR_READ_*).
     pub(crate) fn validate_framebuffer(&self) -> WebGLResult<()> {
         match self.bound_draw_framebuffer.get() {
-            Some(fb) => match fb.check_status_for_rendering() {
-                CompleteForRendering::Complete => Ok(()),
-                CompleteForRendering::Incomplete => Err(InvalidFramebufferOperation),
-                CompleteForRendering::MissingColorAttachment => Err(InvalidOperation),
-            },
+            Some(fb) => Self::framebuffer_status_for_rendering(&fb),
             None => Ok(()),
+        }
+    }
+
+    /// [`Self::validate_framebuffer`] for draws, which read the framebuffer without rooting it.
+    fn validate_draw_framebuffer(&self, no_gc: &NoGC) -> WebGLResult<()> {
+        match self.bound_draw_framebuffer.get_unrooted(no_gc) {
+            Some(fb) => Self::framebuffer_status_for_rendering(&fb),
+            None => Ok(()),
+        }
+    }
+
+    fn framebuffer_status_for_rendering(fb: &WebGLFramebuffer) -> WebGLResult<()> {
+        match fb.check_status_for_rendering() {
+            CompleteForRendering::Complete => Ok(()),
+            CompleteForRendering::Incomplete => Err(InvalidFramebufferOperation),
+            CompleteForRendering::MissingColorAttachment => Err(InvalidOperation),
+        }
+    }
+
+    /// Creates the default vertex array on first use. Draws then read the current vertex array, the program and the
+    /// buffers without rooting them, under a [`NoGC`] token: their checks run no script and allocate nothing on the
+    /// JS heap, and rooting each object was a large share of a draw's cost on the script thread (N-22).
+    pub(crate) fn ensure_current_vao(&self, cx: &mut JSContext) {
+        let missing = match self.webgl_version() {
+            WebGLVersion::WebGL1 => self.current_vao.get_unrooted(cx.no_gc()).is_none(),
+            WebGLVersion::WebGL2 => self.current_vao_webgl2.get_unrooted(cx.no_gc()).is_none(),
+        };
+        if missing {
+            match self.webgl_version() {
+                WebGLVersion::WebGL1 => drop(self.current_vao(cx)),
+                WebGLVersion::WebGL2 => drop(self.current_vao_webgl2(cx)),
+            }
         }
     }
 
@@ -1170,7 +1199,12 @@ impl WebGLRenderingContext {
             return Err(InvalidValue);
         }
 
-        let current_program = self.current_program.get().ok_or(InvalidOperation)?;
+        self.ensure_current_vao(cx);
+        let no_gc = cx.no_gc();
+        let current_program = self
+            .current_program
+            .get_unrooted(no_gc)
+            .ok_or(InvalidOperation)?;
 
         let required_len = if count > 0 {
             first
@@ -1181,20 +1215,21 @@ impl WebGLRenderingContext {
             0
         };
 
+        let attribs = current_program.active_attribs();
         match self.webgl_version() {
-            WebGLVersion::WebGL1 => self.current_vao(cx).validate_for_draw(
-                required_len,
-                primcount as u32,
-                &current_program.active_attribs(),
-            )?,
-            WebGLVersion::WebGL2 => self.current_vao_webgl2(cx).validate_for_draw(
-                required_len,
-                primcount as u32,
-                &current_program.active_attribs(),
-            )?,
+            WebGLVersion::WebGL1 => self
+                .current_vao
+                .get_unrooted(no_gc)
+                .ok_or(InvalidOperation)?
+                .validate_for_draw(required_len, primcount as u32, &attribs)?,
+            WebGLVersion::WebGL2 => self
+                .current_vao_webgl2
+                .get_unrooted(no_gc)
+                .ok_or(InvalidOperation)?
+                .validate_for_draw(required_len, primcount as u32, &attribs)?,
         };
 
-        self.validate_framebuffer()?;
+        self.validate_draw_framebuffer(no_gc)?;
 
         if count == 0 || primcount == 0 {
             return Ok(());
@@ -1277,36 +1312,46 @@ impl WebGLRenderingContext {
             return Err(InvalidOperation);
         }
 
-        let current_program = self.current_program.get().ok_or(InvalidOperation)?;
-        let array_buffer = match self.webgl_version() {
-            WebGLVersion::WebGL1 => self.current_vao(cx).element_array_buffer().get(),
-            WebGLVersion::WebGL2 => self.current_vao_webgl2(cx).element_array_buffer().get(),
-        }
-        .ok_or(InvalidOperation)?;
-
-        if count > 0 && primcount > 0 {
-            // This operation cannot overflow in u64 and we know all those values are nonnegative.
-            let val = offset as u64 + (count as u64 * type_size as u64);
-            if val > array_buffer.capacity() as u64 {
-                return Err(InvalidOperation);
+        self.ensure_current_vao(cx);
+        let no_gc = cx.no_gc();
+        let current_program = self
+            .current_program
+            .get_unrooted(no_gc)
+            .ok_or(InvalidOperation)?;
+        let check_elements = |buffer: Option<UnrootedDom<'_, WebGLBuffer>>| {
+            let buffer = buffer.ok_or(InvalidOperation)?;
+            if count > 0 && primcount > 0 {
+                // This operation cannot overflow in u64 and we know all those values are nonnegative.
+                let val = offset as u64 + (count as u64 * type_size as u64);
+                if val > buffer.capacity() as u64 {
+                    return Err(InvalidOperation);
+                }
             }
-        }
-
-        // TODO(nox): Pass the correct number of vertices required.
-        match self.webgl_version() {
-            WebGLVersion::WebGL1 => self.current_vao(cx).validate_for_draw(
-                0,
-                primcount as u32,
-                &current_program.active_attribs(),
-            )?,
-            WebGLVersion::WebGL2 => self.current_vao_webgl2(cx).validate_for_draw(
-                0,
-                primcount as u32,
-                &current_program.active_attribs(),
-            )?,
+            Ok(())
         };
 
-        self.validate_framebuffer()?;
+        // TODO(nox): Pass the correct number of vertices required.
+        let attribs = current_program.active_attribs();
+        match self.webgl_version() {
+            WebGLVersion::WebGL1 => {
+                let vao = self
+                    .current_vao
+                    .get_unrooted(no_gc)
+                    .ok_or(InvalidOperation)?;
+                check_elements(vao.element_array_buffer().get_unrooted(no_gc))?;
+                vao.validate_for_draw(0, primcount as u32, &attribs)?
+            },
+            WebGLVersion::WebGL2 => {
+                let vao = self
+                    .current_vao_webgl2
+                    .get_unrooted(no_gc)
+                    .ok_or(InvalidOperation)?;
+                check_elements(vao.element_array_buffer().get_unrooted(no_gc))?;
+                vao.validate_for_draw(0, primcount as u32, &attribs)?
+            },
+        };
+
+        self.validate_draw_framebuffer(no_gc)?;
 
         if count == 0 || primcount == 0 {
             return Ok(());
@@ -1617,6 +1662,22 @@ impl WebGLRenderingContext {
 
     pub(crate) fn current_program(&self) -> Option<DomRoot<WebGLProgram>> {
         self.current_program.get()
+    }
+
+    /// The current program, unrooted, for checks that cannot run a GC.
+    pub(crate) fn current_program_unrooted<'a>(
+        &self,
+        no_gc: &'a NoGC,
+    ) -> Option<UnrootedDom<'a, WebGLProgram>> {
+        self.current_program.get_unrooted(no_gc)
+    }
+
+    /// The current WebGL 2 vertex array, unrooted; [`Self::ensure_current_vao`] creates the default one first.
+    pub(crate) fn current_vao_webgl2_unrooted<'a>(
+        &self,
+        no_gc: &'a NoGC,
+    ) -> Option<UnrootedDom<'a, WebGLVertexArrayObject>> {
+        self.current_vao_webgl2.get_unrooted(no_gc)
     }
 
     pub(crate) fn uniform_check_program(
