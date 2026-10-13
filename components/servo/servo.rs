@@ -128,7 +128,20 @@ mod media_platform {
     }
 }
 
-#[cfg(all(not(feature = "media-gstreamer"), target_env = "ohos"))]
+// Audio without GStreamer: cpal, symphonia and libopus (servo-media-cpal).
+#[cfg(all(feature = "media-cpal", not(feature = "media-gstreamer")))]
+mod media_platform {
+    use super::ServoMedia;
+    pub fn init() {
+        ServoMedia::init::<servo_media_cpal::CpalBackend>();
+    }
+}
+
+#[cfg(all(
+    not(feature = "media-gstreamer"),
+    not(feature = "media-cpal"),
+    target_env = "ohos"
+))]
 mod media_platform {
     use servo_media_ohos::OhosBackend;
 
@@ -138,7 +151,11 @@ mod media_platform {
     }
 }
 
-#[cfg(all(not(feature = "media-gstreamer"), not(target_env = "ohos")))]
+#[cfg(all(
+    not(feature = "media-gstreamer"),
+    not(feature = "media-cpal"),
+    not(target_env = "ohos")
+))]
 mod media_platform {
     use super::ServoMedia;
     pub fn init() {

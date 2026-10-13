@@ -57,6 +57,7 @@ gamepad = [
 jitspew = ["script/jitspew"]
 js_backtrace = ["script/js_backtrace"]
 js_jit = ["script/js_jit"]
+media-cpal = ["servo-media-cpal"]
 media-gstreamer = ["servo-media-gstreamer", "gstreamer"]
 # GStreamer with only the plugins audio playback needs (gstreamer_plugin_lists/audio.rs.in).
 media-gstreamer-audio = ["media-gstreamer"]
@@ -152,6 +153,7 @@ servo-constellation = { workspace = true }
 servo-constellation-traits = { workspace = true }
 servo-geometry = { workspace = true }
 servo-media = { workspace = true }
+servo-media-cpal = { workspace = true, optional = true }
 servo-media-dummy = { workspace = true }
 servo-media-gstreamer = { workspace = true, optional = true }
 servo-tracing = { workspace = true }

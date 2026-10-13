@@ -1,0 +1,32 @@
+[package]
+name = "servo-media-cpal"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "A servo-media backend for audio without GStreamer: cpal for output, symphonia for Ogg and WAV, libopus for Opus."
+
+[lib]
+name = "servo_media_cpal"
+path = "lib.rs"
+
+[dependencies]
+cpal = { workspace = true }
+log = { workspace = true }
+mime = { workspace = true }
+opus = { workspace = true }
+servo-base = { workspace = true }
+servo-media = { workspace = true }
+servo-media-audio = { workspace = true }
+servo-media-dummy = { workspace = true }
+servo-media-player = { workspace = true }
+servo-media-streams = { workspace = true }
+servo-media-traits = { workspace = true }
+servo-media-webrtc = { workspace = true }
+symphonia = { workspace = true }
+
+[lints]
+workspace = true

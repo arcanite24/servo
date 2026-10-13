@@ -65,6 +65,7 @@ chardetng = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 content-security-policy = { version = "0.8.1", features = ["serde"] }
 cookie = { package = "cookie", version = "0.18" }
+cpal = "0.16"
 criterion = "0.8"
 crossbeam-channel = "0.5"
 crypto-bigint = "0.7"
@@ -186,6 +187,7 @@ ohos-window-manager-sys = "0.1"
 ohos-window-sys = "0.1.7"
 once_cell = "1.21.4"
 openxr = "0.21"
+opus = "0.3"
 p256 = { version = "0.14", features = ["ecdh"] }
 p384 = { version = "0.14", features = ["ecdh"] }
 p521 = { version = "0.14", features = ["ecdh"] }
@@ -245,6 +247,7 @@ stylo_static_prefs = "0.21.0"
 stylo_traits = "0.21.0"
 surfman = { version = "0.13.0", features = ["chains"] }
 swapper = "0.1"
+symphonia = { version = "0.5", default-features = false, features = ["ogg", "pcm", "wav"] }
 syn = { version = "2", default-features = false, features = ["clone-impls", "derive", "parsing"] }
 synstructure = "0.13"
 sys-locale = "0.3"
@@ -346,6 +349,7 @@ servo-media = { version = "=0.6.0", path = "components/media/servo-media" }
 servo-media-audio = { version = "=0.6.0", path = "components/media/audio" }
 servo-media-auto = { version = "=0.6.0", path = "components/media/backends/auto" }
 servo-media-derive = { version = "=0.6.0", path = "components/media/servo-media-derive" }
+servo-media-cpal = { version = "=0.6.0", path = "components/media/backends/cpal" }
 servo-media-dummy = { version = "=0.6.0", path = "components/media/backends/dummy" }
 servo-media-gstreamer = { version = "=0.6.0", path = "components/media/backends/gstreamer" }
 servo-media-gstreamer-render = { version = "=0.6.0", path = "components/media/backends/gstreamer/render" }
