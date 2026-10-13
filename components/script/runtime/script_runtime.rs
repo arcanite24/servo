@@ -831,6 +831,9 @@ impl Runtime {
             if let Some(val) = in_range(pref!(js_mem_gc_empty_chunk_count_min), 0, 10_000) {
                 JS_SetGCParameter(cx, JSGCParamKey::JSGC_MIN_EMPTY_CHUNK_COUNT, val as u32);
             }
+            if let Some(val) = in_range(pref!(js_mem_nursery_min_kb), 1, 64 * 1024) {
+                JS_SetGCParameter(cx, JSGCParamKey::JSGC_MIN_NURSERY_BYTES, (val * 1024) as u32);
+            }
         }
         Runtime {
             rt: runtime,

@@ -295,6 +295,11 @@ pub struct Preferences {
     pub js_mem_gc_zeal_frequency: i64,
     pub js_mem_gc_zeal_level: i64,
     pub js_mem_max: i64,
+    /// The smallest the nursery gets, in KiB (SpiderMonkey's JSGC_MIN_NURSERY_BYTES); -1 keeps
+    /// SpiderMonkey's 256. At 256 KiB a game that allocates on every frame collects the nursery
+    /// about every frame (48 a second on Tinkerpatch's title, 7 ms a second); at 4 MiB, 3 a
+    /// second and under 1 ms a second.
+    pub js_mem_nursery_min_kb: i64,
     pub js_native_regex_enabled: bool,
     pub js_offthread_compilation_enabled: bool,
     pub js_timers_minimum_duration: i64,
@@ -549,6 +554,7 @@ impl Preferences {
             js_mem_gc_zeal_frequency: 100,
             js_mem_gc_zeal_level: 0,
             js_mem_max: -1,
+            js_mem_nursery_min_kb: 4096,
             js_native_regex_enabled: true,
             js_offthread_compilation_enabled: true,
             js_timers_minimum_duration: 1000,
