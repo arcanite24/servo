@@ -1085,10 +1085,21 @@ impl PlatformWindow for HeadedWindow {
         self.winit_window.set_cursor_visible(true);
     }
 
-    fn set_pointer_lock(&self, locked: bool) {
+    fn set_pointer_lock(&self, webview: &WebView, locked: bool) {
         use winit::window::CursorGrabMode;
 
         self.pointer_locked.set(locked);
+        // As in Minecraft, the cursor sits at the window's centre whenever the pointer is locked
+        // or released: a page that frees it for a menu shows it where the crosshair was, not
+        // where it was when the lock began. Only for the focused window, so losing focus to
+        // another app never moves the cursor under the player.
+        let centre = self.winit_window.has_focus().then(|| {
+            let size = self.winit_window.inner_size();
+            PhysicalPosition::new(f64::from(size.width) / 2.0, f64::from(size.height) / 2.0)
+        });
+        if let Some(centre) = centre {
+            let _ = self.winit_window.set_cursor_position(centre);
+        }
         if locked {
             // Locked holds the cursor in place (macOS, Wayland); Confined (Windows, X11) keeps
             // it in the window, and moves are then ignored in favour of raw motion.
@@ -1103,6 +1114,11 @@ impl PlatformWindow for HeadedWindow {
         } else {
             let _ = self.winit_window.set_cursor_grab(CursorGrabMode::None);
             self.winit_window.set_cursor_visible(true);
+            // Not every platform reports a moved cursor after a warp (macOS does not), so tell the
+            // page directly: hover starts from the centre.
+            if let Some(centre) = centre {
+                self.handle_mouse_move_event(webview, centre);
+            }
         }
     }
 
